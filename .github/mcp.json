@@ -1,0 +1,45 @@
+{
+  "mcpServers": {
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "--yes",
+        "@azure/mcp@3.0.0",
+        "server",
+        "start",
+        "--read-only",
+        "--disable-proxy-tools",
+        "--mode",
+        "all",
+        "--namespace",
+        "group",
+        "--namespace",
+        "subscription",
+        "--namespace",
+        "monitor",
+        "--namespace",
+        "resourcehealth",
+        "--namespace",
+        "quota"
+      ],
+      "tools": ["*"]
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp",
+      "tools": ["*"]
+    },
+    "terraform": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "hashicorp/terraform-mcp-server:1.2.0"
+      ],
+      "tools": ["*"]
+    }
+  }
+}
