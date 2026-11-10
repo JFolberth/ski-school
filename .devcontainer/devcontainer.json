@@ -1,0 +1,35 @@
+{
+  "name": "simple-hosted-agent",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "version": "latest",
+      "extensions": "cognitiveservices"
+    },
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+      "moby": false
+    },
+    "ghcr.io/devcontainers/features/terraform:1": {
+      "version": "latest",
+      "tflint": "latest"
+    },
+    "ghcr.io/devcontainers/features/dotnet:2": {
+      "version": "10.0"
+    }
+  },
+  "postCreateCommand": "pip install -r src/agent-framework/responses/basic/requirements.txt && az bicep install && curl -fsSL https://aka.ms/install-azd.sh | bash && azd extension install azure.ai.agents",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-azuretools.vscode-docker",
+        "ms-vscode.azurecli",
+        "ms-python.python",
+        "hashicorp.terraform",
+        "ms-azuretools.azure-dev"
+      ],
+      "settings": {
+        "python.terminal.useEnvFile": true
+      }
+    }
+  }
+}
