@@ -1,0 +1,99 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #203d38;
+  background: #f5f7f6;
+  font-synthesis: none;
+  --muted: #566a63;
+  --green: #214f43;
+  --border: #d7e0da;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; min-height: 100dvh; }
+button, textarea { font: inherit; }
+button, a, textarea { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible, a:focus-visible, textarea:focus-visible {
+  outline: 3px solid #ac5c27;
+  outline-offset: 4px;
+}
+[hidden] { display: none !important; }
+
+.site-header {
+  max-width: 1280px;
+  margin: auto;
+  padding: 28px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.brand { display: flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+.brand-mark { width: 48px; height: 48px; border-radius: 15px; background: var(--green); color: #fff; padding: 5px; }
+.brand-mark svg { width: 100%; height: 100%; }
+.brand-name { display: block; font-size: 21px; font-weight: 750; letter-spacing: -.7px; }
+.brand-subtitle { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+.reset-button { border: 1px solid var(--border); background: transparent; color: var(--green); padding: 10px 16px; border-radius: 9px; font-size: 14px; white-space: nowrap; min-height: 44px; }
+.reset-button span { font-size: 19px; margin-right: 7px; }
+.reset-button:hover { background: #e7eee9; }
+
+.chat-shell { max-width: 880px; padding: 8px 24px 0; margin: auto; }
+.demo-banner { display: flex; gap: 10px; align-items: center; border: 1px solid #e5dbc6; background: #fbf7ed; padding: 11px 15px; border-radius: 10px; }
+.demo-banner p { margin: 0; font-size: 12px; line-height: 1.6; color: #6f5b36; }
+.demo-badge { border: 1px solid #dfcfac; border-radius: 5px; font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .8px; padding: 3px 6px; color: #6f5b36; }
+.welcome { padding: 64px 0 20px; text-align: center; }
+.eyebrow { font-size: 10px; font-weight: 750; letter-spacing: 2px; color: var(--muted); margin: 0 0 20px; }
+h1 { margin: 0; font-size: clamp(36px, 5vw, 58px); line-height: 1.1; font-weight: 650; letter-spacing: -2.5px; }
+.welcome-copy { max-width: 480px; margin: 22px auto 32px; font-size: 15px; line-height: 1.8; color: var(--muted); }
+.suggestions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: left; }
+.suggestion { display: flex; flex-direction: column; gap: 17px; padding: 20px 16px; border: 1px solid var(--border); border-radius: 12px; background: #fff; color: var(--green); text-align: left; font-size: 13px; line-height: 1.6; }
+.suggestion:hover:not(:disabled) { background: #edf3ee; border-color: #9fb6a8; }
+.suggestion > span:last-child { display: flex; justify-content: space-between; gap: 10px; width: 100%; }
+.suggestion-category { color: var(--muted); font-size: 9px; font-weight: 750; letter-spacing: 1.3px; }
+.welcome-note { color: var(--muted); font-size: 11px; margin: 21px 0 0; }
+.conversation { padding: 28px 0 0; }
+.message { max-width: 90%; margin-bottom: 24px; }
+.message-label { font-size: 11px; font-weight: 750; margin: 0 0 8px 2px; color: var(--muted); }
+.message-body { margin: 0; padding: 19px 22px; background: #fff; border: 1px solid var(--border); border-radius: 3px 16px 16px; line-height: 1.8; font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-user { margin-left: auto; }
+.message-user .message-label { text-align: right; }
+.message-user .message-body { background: #e7eee9; border-color: #d3ded5; border-radius: 16px 3px 16px 16px; }
+.composer-area { position: sticky; bottom: 0; padding: 12px 0 16px; background: #f5f7f6; }
+.reply-status { min-height: 19px; margin: 0 0 10px; font-size: 12px; color: var(--muted); }
+.composer { display: flex; gap: 12px; align-items: flex-end; background: #fff; padding: 14px; border: 1px solid #b5c7bb; border-radius: 14px; box-shadow: 0 5px 20px #203d3808; }
+textarea { display: block; flex: 1; min-width: 0; resize: vertical; max-height: 240px; min-height: 48px; border: 0; background: transparent; padding: 6px; color: #203d38; line-height: 1.6; font-size: 16px; }
+textarea::placeholder { color: #64736c; }
+.send-button { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 9px; color: #fff; background: var(--green); }
+.send-button svg { width: 22px; height: 22px; }
+.send-button:hover:not(:disabled) { background: #163d32; }
+.send-button:disabled { background: #e4eae6; color: #64736c; }
+.composer-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 10px; line-height: 1.6; color: var(--muted); padding: 11px 3px 0; }
+.site-footer { text-align: center; font-size: 9px; letter-spacing: 1.5px; color: var(--muted); padding: 26px 20px; }
+.site-footer span { margin: 0 10px; }
+.noscript-notice { padding: 16px; text-align: center; color: #6f5b36; background: #fbf7ed; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+@media (max-width: 600px) {
+  .site-header { padding: 20px; gap: 10px; }
+  .brand { gap: 9px; }
+  .brand-mark { width: 40px; height: 40px; border-radius: 12px; }
+  .brand-name { font-size: 19px; }
+  .brand-subtitle { display: none; }
+  .reset-button { padding: 8px 12px; font-size: 12px; }
+  .chat-shell { padding: 4px 18px 0; }
+  .demo-banner { align-items: flex-start; padding: 10px; }
+  .demo-badge { margin-top: 2px; }
+  .welcome { padding-top: 38px; }
+  .eyebrow { font-size: 9px; letter-spacing: 1.3px; }
+  h1 { letter-spacing: -1.5px; }
+  .welcome-copy { font-size: 14px; margin: 18px auto 24px; }
+  .suggestions { grid-template-columns: 1fr; gap: 8px; }
+  .suggestion { padding: 14px 16px; gap: 5px; }
+  .message { max-width: 96%; }
+  .message-body { padding: 16px; }
+  .composer { padding: 10px; gap: 8px; }
+  .composer-help { font-size: 10px; }
+  .site-footer { padding-top: 12px; font-size: 8px; letter-spacing: 1px; }
+}
