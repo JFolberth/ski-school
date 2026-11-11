@@ -15,7 +15,7 @@ variable "application_insights" {
     retention_in_days   = optional(number, 30)
     sampling_percentage = optional(number, 100)
   })
-  description = "Dedicated Foundry component settings. Native OTLP is linked to the required shared Monitor workspace; runtime sampling/redaction and ingestion identity still require configuration."
+  description = "Dedicated Foundry component settings. Runtime sampling/redaction and ingestion identity still require configuration."
   default     = {}
   nullable    = false
   validation {
@@ -75,6 +75,21 @@ variable "gateway_principals" {
   validation {
     condition     = alltrue([for principal_id in values(var.gateway_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
     error_message = "Supply actual gateway managed identity principal object UUIDs under stable labels."
+  }
+}
+
+variable "gateway_foundry_user_principals" {
+  type        = map(string)
+  description = "Existing gateway system-assigned principal UUIDs under explicit stable keys; grants Foundry User at the account scope. Do not also grant the same principal through gateway_principals."
+  default     = {}
+  nullable    = false
+  validation {
+    condition     = alltrue([for principal_id in values(var.gateway_foundry_user_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
+    error_message = "Supply actual gateway managed identity principal object UUIDs under stable labels."
+  }
+  validation {
+    condition     = length(setintersection(toset([for principal_id in values(var.gateway_foundry_user_principals) : lower(principal_id)]), toset([for principal_id in values(var.gateway_principals) : lower(principal_id)]))) == 0
+    error_message = "Do not grant both Foundry User and Cognitive Services OpenAI User to the same gateway principal."
   }
 }
 
@@ -154,12 +169,19 @@ variable "model_version_upgrade_option" {
 
 variable "monitor_workspace_id" {
   type        = string
-  description = "Required Azure Monitor workspace ARM ID from the logging root; enables the approved native OTLP association for this Application Insights component."
-  nullable    = false
+  description = "Azure Monitor workspace ARM ID from the logging root when native OTLP is enabled; null when deferred."
+  default     = null
   validation {
-    condition     = can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Monitor/accounts/[^/]+$", var.monitor_workspace_id))
-    error_message = "Supply the explicit shared Azure Monitor workspace ARM ID."
+    condition     = var.native_otlp_enabled ? can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Monitor/accounts/[^/]+$", var.monitor_workspace_id)) : var.monitor_workspace_id == null
+    error_message = "Supply the shared Azure Monitor workspace ARM ID when native OTLP is enabled, or null when disabled."
   }
+}
+
+variable "native_otlp_enabled" {
+  type        = bool
+  description = "Enable native OTLP for Application Insights using the specified Azure Monitor workspace. Azure does not support opting out after enabling it."
+  default     = true
+  nullable    = false
 }
 
 variable "project_description" {
@@ -173,6 +195,13 @@ variable "project_display_name" {
   type        = string
   description = "Optional human-readable project display name; resource naming remains base-derived."
   default     = null
+}
+
+variable "project_telemetry_connection_enabled" {
+  type        = bool
+  description = "Create a private project telemetry connection using project managed identity. Disabling an existing connection removes it."
+  default     = true
+  nullable    = false
 }
 
 variable "subscription_id" {

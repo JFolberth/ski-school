@@ -21,11 +21,22 @@ variable "environment" {
 
 variable "location" {
   type        = string
-  description = "Actual Azure location; centralized logging remains in North Central US."
+  description = "Azure location for the resource group and Log Analytics workspace; both remain in North Central US."
   nullable    = false
   validation {
     condition     = var.location == "northcentralus"
     error_message = "Only northcentralus is approved for centralized logging."
+  }
+}
+
+variable "monitor_workspace_location" {
+  type        = string
+  description = "Azure Monitor workspace location, independently configured from the resource group and Log Analytics workspace; East US 2 is approved."
+  default     = "eastus2"
+  nullable    = false
+  validation {
+    condition     = var.monitor_workspace_location == "eastus2"
+    error_message = "Only eastus2 is approved for the Azure Monitor workspace."
   }
 }
 

@@ -4,7 +4,7 @@ variable "application_insights" {
     retention_in_days   = optional(number, 30)
     sampling_percentage = optional(number, 100)
   })
-  description = "Dedicated gateway component settings. Native OTLP is linked to the required shared Monitor workspace; DCR/endpoints arrive asynchronously."
+  description = "Dedicated Application Insights settings, used only when native OTLP is enabled; DCR/endpoints arrive asynchronously."
   default     = {}
   nullable    = false
   validation {
@@ -18,7 +18,7 @@ variable "base_name" {
   description = "Independent short gateway stem, maximum 11 characters for aig-<base>-<env>-<region> (24 total). aig is a proposed local prefix, not CAF."
   nullable    = false
   validation {
-    condition     = length(var.base_name) <= 11 && can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", var.base_name)) && !can(regex("(^|-)(${var.environment}|ncus|eus2|gbl)(-|$)", var.base_name))
+    condition     = length(var.base_name) <= 11 && can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", var.base_name)) && !can(regex("(^|-)(${var.environment}|ncus|eus2|swc|gbl)(-|$)", var.base_name))
     error_message = "Use a 1–11 character lowercase alphanumeric/hyphen stem without environment or region tokens; no silent truncation."
   }
 }
@@ -50,11 +50,11 @@ variable "gateway_sku" {
 
 variable "location" {
   type        = string
-  description = "Explicit preview gateway region after availability verification: northcentralus preferred; eastus2 is the approved gateway-and-local-AppInsights-only fallback. Never auto-failover."
+  description = "AI Gateway public-preview region; dev selects East US 2. Never auto-fail over."
   nullable    = false
   validation {
-    condition     = contains(["northcentralus", "eastus2"], var.location)
-    error_message = "Only northcentralus or the explicitly selected eastus2 gateway fallback is approved."
+    condition     = contains(["eastus2", "swedencentral"], var.location)
+    error_message = "AI Gateway public preview is currently supported in eastus2 and swedencentral."
   }
 }
 
@@ -87,12 +87,19 @@ variable "model_callers" {
 
 variable "monitor_workspace_id" {
   type        = string
-  description = "Required Azure Monitor workspace ARM ID from the logging root; enables the approved native OTLP association for this Application Insights component."
-  nullable    = false
+  description = "Azure Monitor workspace ARM ID from the logging root; required only when native OTLP is enabled."
+  default     = null
   validation {
-    condition     = can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Monitor/accounts/[^/]+$", var.monitor_workspace_id))
-    error_message = "Supply the explicit shared Azure Monitor workspace ARM ID."
+    condition     = var.monitor_workspace_id == null ? !var.native_otlp_enabled : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Monitor/accounts/[^/]+$", var.monitor_workspace_id))
+    error_message = "Supply a valid Azure Monitor workspace ARM ID when native OTLP is enabled."
   }
+}
+
+variable "native_otlp_enabled" {
+  type        = bool
+  description = "Opt in to native OTLP only after the Log Analytics and Azure Monitor workspaces are verified for the same-region ingestion design."
+  default     = false
+  nullable    = false
 }
 
 variable "subscription_id" {
@@ -129,13 +136,14 @@ variable "telemetry_exporter" {
   }
   validation {
     condition = var.telemetry_exporter == null ? true : (
-      var.application_insights.native_otlp != null &&
-      var.telemetry_exporter.data_collection_rule_id == try(module.application_insights.otlp.data_collection_rule_id, null) &&
-      var.telemetry_exporter.endpoints.logs == try(module.application_insights.otlp.endpoints.logs, null) &&
-      var.telemetry_exporter.endpoints.metrics == try(module.application_insights.otlp.endpoints.metrics, null) &&
-      var.telemetry_exporter.endpoints.traces == try(module.application_insights.otlp.endpoints.traces, null)
+      var.native_otlp_enabled &&
+      try(module.application_insights[0].otlp.data_collection_rule_id, null) != null &&
+      var.telemetry_exporter.data_collection_rule_id == try(module.application_insights[0].otlp.data_collection_rule_id, null) &&
+      var.telemetry_exporter.endpoints.logs == try(module.application_insights[0].otlp.endpoints.logs, null) &&
+      var.telemetry_exporter.endpoints.metrics == try(module.application_insights[0].otlp.endpoints.metrics, null) &&
+      var.telemetry_exporter.endpoints.traces == try(module.application_insights[0].otlp.endpoints.traces, null)
     )
-    error_message = "Enable native OTLP first, then supply this dedicated component's actual non-null DCR and signal endpoints in a separately approved stage."
+    error_message = "Enable native OTLP with a region-compatible workspace pair, then supply this component's actual non-null DCR and signal endpoints in a separately approved stage."
   }
 }
 
@@ -151,10 +159,10 @@ variable "tenant_id" {
 
 variable "workspace_id" {
   type        = string
-  description = "Shared logging-root workspace ARM ID, supplied explicitly. Gateway-local AppInsights remains a separate component even for cross-region fallback."
-  nullable    = false
+  description = "Log Analytics workspace ARM ID from the logging root; required only when native OTLP is enabled."
+  default     = null
   validation {
-    condition     = can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.OperationalInsights/workspaces/[^/]+$", var.workspace_id))
-    error_message = "Supply the explicit Log Analytics workspace ARM ID."
+    condition     = var.workspace_id == null ? !var.native_otlp_enabled : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.OperationalInsights/workspaces/[^/]+$", var.workspace_id))
+    error_message = "Supply a valid Log Analytics workspace ARM ID when native OTLP is enabled."
   }
 }

@@ -6,7 +6,7 @@ variable "application_insights_id" {
 
 variable "connection_string" {
   type        = string
-  description = "Approved ApiKey-labelled AppInsights destination metadata, not an ingestion authentication fallback."
+  description = "Application Insights destination metadata, not an ingestion authentication fallback."
   nullable    = false
   sensitive   = true
 }

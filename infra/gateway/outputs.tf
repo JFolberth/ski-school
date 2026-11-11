@@ -1,11 +1,11 @@
 output "application_insights_id" {
-  description = "Dedicated gateway component ARM ID."
-  value       = module.application_insights.id
+  description = "Dedicated gateway component ARM ID, null until native OTLP is enabled."
+  value       = try(module.application_insights[0].id, null)
 }
 
 output "application_insights_otlp" {
-  description = "Non-secret asynchronous component metadata. Once complete, pass this exact object as telemetry_exporter in a later approved stage."
-  value       = module.application_insights.otlp
+  description = "Non-secret asynchronous component metadata, null until native OTLP is enabled. Once complete, pass this exact object as telemetry_exporter in a later approved stage."
+  value       = try(module.application_insights[0].otlp, null)
 }
 
 output "gateway_hostname" {
