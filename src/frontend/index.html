@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f7f6">
+    <title>Ski School | Michigan skiing chat</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./styles.css">
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Ski School home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" fill="none">
+            <path d="m6 29 10-18 7 12 4-7 8 13H6Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            <path d="m12 18 4 3 4-3" stroke="currentColor" stroke-width="2"/>
+          </svg>
+        </span>
+        <span><span class="brand-name">Ski School</span><span class="brand-subtitle">A little closer to the slopes.</span></span>
+      </a>
+      <button id="reset" class="reset-button" type="button">
+        <span aria-hidden="true">+</span> New chat
+      </button>
+    </header>
+
+    <main class="chat-shell">
+      <div class="demo-banner">
+        <span class="demo-badge">Demo</span>
+        <p>A preview of the experience. Scripted replies, not live conditions or AI.</p>
+      </div>
+
+      <section id="welcome" class="welcome" aria-labelledby="welcome-title">
+        <p class="eyebrow">MICHIGAN, ONE CONVERSATION AT A TIME</p>
+        <h1 id="welcome-title">Your next ski day<br>starts here.</h1>
+        <p class="welcome-copy">A simple place to talk Michigan resorts, locations, and snow conditions. What would you like to explore?</p>
+        <div class="suggestions" aria-label="Suggested prompts">
+          <button class="suggestion" type="button" data-prompt="Help me explore Michigan ski resorts.">
+            <span class="suggestion-category">FIND YOUR HILL</span>
+            <span>Explore Michigan resorts <span aria-hidden="true">&rarr;</span></span>
+          </button>
+          <button class="suggestion" type="button" data-prompt="What should I check about snow conditions in Michigan?">
+            <span class="suggestion-category">KNOW THE SNOW</span>
+            <span>Talk snow conditions <span aria-hidden="true">&rarr;</span></span>
+          </button>
+          <button class="suggestion" type="button" data-prompt="Help me narrow down a skiing location in Michigan.">
+            <span class="suggestion-category">STAY CLOSER</span>
+            <span>Find a skiing location <span aria-hidden="true">&rarr;</span></span>
+          </button>
+        </div>
+        <p class="welcome-note">Just Michigan skiing. No account needed for this demo.</p>
+      </section>
+
+      <section id="conversation" class="conversation" aria-label="Chat conversation" hidden>
+        <h1 class="sr-only">Michigan skiing chat</h1>
+        <div id="messages" role="log" aria-label="Messages" aria-live="polite" aria-relevant="additions"></div>
+      </section>
+
+      <div class="composer-area">
+        <p id="reply-status" class="reply-status" role="status" aria-live="polite"></p>
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="message">Your message about Michigan skiing</label>
+          <textarea id="message" name="message" rows="2" maxlength="2000" placeholder="Ask about Michigan skiing..." aria-describedby="composer-help" required></textarea>
+          <button id="send" class="send-button" type="submit" aria-label="Send message" disabled>
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M12 19V5m-6 6 6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+        <div id="composer-help" class="composer-help">
+          <span>Enter to send. Shift + Enter for a new line.</span>
+          <span>Demo only. Live data unavailable.</span>
+        </div>
+      </div>
+    </main>
+    <footer class="site-footer">
+      <div>MADE FOR MICHIGAN WINTERS <span aria-hidden="true">/</span> SKI SCHOOL</div>
+      <div class="deployment-info" aria-label="Deployment information">
+        <span>Image: <span id="deployment-image">Unavailable</span></span>
+        <span>Last deployed: <time id="deployment-time">Unavailable</time></span>
+      </div>
+    </footer>
+    <noscript><p class="noscript-notice">This chat demo needs JavaScript. Enable it to try the suggested prompts and scripted replies.</p></noscript>
+  </body>
+</html>
