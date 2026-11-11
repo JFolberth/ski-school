@@ -71,7 +71,8 @@ textarea::placeholder { color: #64736c; }
 .send-button:disabled { background: #e4eae6; color: #64736c; }
 .composer-help { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; font-size: 10px; line-height: 1.6; color: var(--muted); padding: 11px 3px 0; }
 .site-footer { text-align: center; font-size: 9px; letter-spacing: 1.5px; color: var(--muted); padding: 26px 20px; }
-.site-footer span { margin: 0 10px; }
+.site-footer > div:first-child span { margin: 0 10px; }
+.deployment-info { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 20px; margin-top: 12px; font-size: 11px; letter-spacing: normal; overflow-wrap: anywhere; }
 .noscript-notice { padding: 16px; text-align: center; color: #6f5b36; background: #fbf7ed; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 

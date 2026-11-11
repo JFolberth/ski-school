@@ -37,6 +37,77 @@ variable "container_image_repository" {
   }
 }
 
+variable "container_cpu" {
+  description = "CPU cores allocated to the frontend container."
+  type        = number
+  nullable    = false
+  default     = 0.25
+
+  validation {
+    condition     = var.container_cpu >= 0.25 && var.container_cpu <= 4 && var.container_cpu * 4 == floor(var.container_cpu * 4)
+    error_message = "container_cpu must be between 0.25 and 4 cores in increments of 0.25."
+  }
+}
+
+variable "container_memory" {
+  description = "Memory allocated to the frontend container in Gi."
+  type        = string
+  nullable    = false
+  default     = "0.5Gi"
+
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?Gi$", var.container_memory))
+    error_message = "container_memory must be expressed in Gi, for example 0.5Gi."
+  }
+}
+
+variable "deployment_timestamp" {
+  description = "UTC deployment timestamp supplied by the deployment process, or null when unavailable."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.deployment_timestamp == null ? true : can(formatdate("YYYY", var.deployment_timestamp)) && endswith(var.deployment_timestamp, "Z")
+    error_message = "deployment_timestamp must be a valid RFC 3339 UTC timestamp ending in Z, or null."
+  }
+}
+
+variable "min_replicas" {
+  description = "Minimum number of frontend replicas."
+  type        = number
+  nullable    = false
+  default     = 0
+
+  validation {
+    condition     = var.min_replicas >= 0 && var.min_replicas <= 1000 && floor(var.min_replicas) == var.min_replicas
+    error_message = "min_replicas must be a whole number between 0 and 1000."
+  }
+}
+
+variable "max_replicas" {
+  description = "Maximum number of frontend replicas."
+  type        = number
+  nullable    = false
+  default     = 1
+
+  validation {
+    condition     = var.max_replicas >= 1 && var.max_replicas <= 1000 && floor(var.max_replicas) == var.max_replicas
+    error_message = "max_replicas must be a whole number between 1 and 1000."
+  }
+}
+
+variable "http_concurrent_requests" {
+  description = "Concurrent HTTP requests per replica before scaling."
+  type        = number
+  nullable    = false
+  default     = 10
+
+  validation {
+    condition     = var.http_concurrent_requests >= 1 && floor(var.http_concurrent_requests) == var.http_concurrent_requests
+    error_message = "http_concurrent_requests must be a positive whole number."
+  }
+}
+
 variable "environment_name" {
   description = "Environment label used in resource naming and tags."
   type        = string

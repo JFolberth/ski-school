@@ -27,6 +27,7 @@ variable "container_image_repository" {
   description = "Repository path of the frontend image within the existing registry, without a registry hostname or tag."
   type        = string
   nullable    = false
+  default     = "ski-school/frontend"
 
   validation {
     condition = can(regex(
@@ -77,11 +78,53 @@ variable "name_prefix" {
   description = "Short lowercase prefix for frontend resources; must be unique where Azure requires it."
   type        = string
   nullable    = false
+  default     = "ski-frontend"
 
   validation {
     condition     = can(regex("^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$", var.name_prefix))
     error_message = "name_prefix must be 3-20 lowercase letters, digits, or hyphens, beginning and ending with a letter or digit."
   }
+}
+
+variable "container_cpu" {
+  description = "CPU cores allocated to the frontend container."
+  type        = number
+  nullable    = false
+  default     = 0.25
+}
+
+variable "container_memory" {
+  description = "Memory allocated to the frontend container."
+  type        = string
+  nullable    = false
+  default     = "0.5Gi"
+}
+
+variable "deployment_timestamp" {
+  description = "UTC timestamp supplied by the deployment process, or null when unavailable."
+  type        = string
+  default     = null
+}
+
+variable "min_replicas" {
+  description = "Minimum number of frontend replicas."
+  type        = number
+  nullable    = false
+  default     = 0
+}
+
+variable "max_replicas" {
+  description = "Maximum number of frontend replicas."
+  type        = number
+  nullable    = false
+  default     = 1
+}
+
+variable "http_concurrent_requests" {
+  description = "Concurrent HTTP requests per replica before scaling."
+  type        = number
+  nullable    = false
+  default     = 10
 }
 
 variable "resource_group_name" {

@@ -155,6 +155,16 @@ resource "azapi_resource" "container_app" {
           {
             image = "${data.azapi_resource.acr.output.properties.loginServer}/${var.container_image_repository}@${var.container_image_digest}"
             name  = "frontend"
+            env = [
+              {
+                name  = "IMAGE_NAME"
+                value = "${var.container_image_repository}@${var.container_image_digest}"
+              },
+              {
+                name  = "DEPLOYED_AT"
+                value = var.deployment_timestamp == null ? "" : var.deployment_timestamp
+              }
+            ]
             probes = [
               {
                 failureThreshold    = 30
@@ -197,19 +207,19 @@ resource "azapi_resource" "container_app" {
               }
             ]
             resources = {
-              cpu    = 0.25
-              memory = "0.5Gi"
+              cpu    = var.container_cpu
+              memory = var.container_memory
             }
           }
         ]
         scale = {
-          maxReplicas = 1
-          minReplicas = 0
+          maxReplicas = var.max_replicas
+          minReplicas = var.min_replicas
           rules = [
             {
               http = {
                 metadata = {
-                  concurrentRequests = "10"
+                  concurrentRequests = tostring(var.http_concurrent_requests)
                 }
               }
               name = "http-requests"
@@ -225,6 +235,18 @@ resource "azapi_resource" "container_app" {
   depends_on = [
     azapi_resource.acr_pull_role_assignment,
   ]
+
+  lifecycle {
+    precondition {
+      condition     = var.min_replicas <= var.max_replicas
+      error_message = "min_replicas must not exceed max_replicas."
+    }
+
+    precondition {
+      condition     = try(tonumber(trimsuffix(var.container_memory, "Gi")) == var.container_cpu * 2, false)
+      error_message = "Consumption memory must be twice the CPU allocation in Gi, for example 0.25 CPU and 0.5Gi memory."
+    }
+  }
 }
 
 resource "azapi_resource" "diagnostic_settings" {

@@ -1,9 +1,7 @@
 terraform {
   backend "azurerm" {
-    # Storage account, container, and resource group are supplied through
-    # approved partial backend configuration at init time. This state key is
-    # isolated to the frontend development root.
-    key              = "frontend/dev/terraform.tfstate"
+    # Supply the storage account, container, resource group, and
+    # environment-specific state key through backend configuration at init.
     use_azuread_auth = true
     use_oidc         = true
   }

@@ -8,6 +8,29 @@ const messages = document.querySelector("#messages");
 const replyStatus = document.querySelector("#reply-status");
 const suggestions = document.querySelectorAll("[data-prompt]");
 
+async function showDeploymentInfo() {
+  try {
+    const response = await fetch("./deployment.json", { cache: "no-store" });
+    if (!response.ok) throw new Error(`Metadata request failed: ${response.status}`);
+    const metadata = await response.json();
+    if (typeof metadata.image === "string" && metadata.image) {
+      document.querySelector("#deployment-image").textContent = metadata.image;
+    }
+    if (typeof metadata.deployedAt === "string" && metadata.deployedAt.endsWith("Z")) {
+      const timestamp = new Date(metadata.deployedAt);
+      if (!Number.isNaN(timestamp.getTime())) {
+        const element = document.querySelector("#deployment-time");
+        element.dateTime = metadata.deployedAt;
+        element.textContent = `${timestamp.toISOString().replace("T", " ").replace(".000Z", " UTC").replace("Z", " UTC")}`;
+      }
+    }
+  } catch (error) {
+    console.error("Deployment metadata is unavailable.", error);
+  }
+}
+
+showDeploymentInfo();
+
 let pendingReply = null;
 
 const demoReplies = [
