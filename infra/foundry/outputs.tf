@@ -14,8 +14,8 @@ output "account_principal_id" {
 }
 
 output "application_insights_connection_id" {
-  description = "Private project telemetry destination metadata association. No connection string is exposed."
-  value       = module.project_telemetry_connection.id
+  description = "Private project telemetry destination metadata association, null when deferred. No connection string is exposed."
+  value       = var.project_telemetry_connection_enabled ? module.project_telemetry_connection[0].id : null
 }
 
 output "application_insights_id" {

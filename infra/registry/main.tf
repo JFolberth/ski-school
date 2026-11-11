@@ -19,6 +19,8 @@ module "diagnostics" {
   resource_id    = module.registry.id
   workspace_id   = var.workspace_id
   log_categories = var.diagnostic_log_categories
+  # Match ACR's normalized disabled metrics without enabling collection.
+  disabled_metric_categories = ["AllMetrics"]
 }
 
 # Image-pull RBAC is deliberately deferred until the hosted-agent runtime

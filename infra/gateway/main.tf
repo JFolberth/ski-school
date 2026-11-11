@@ -15,13 +15,14 @@ module "gateway" {
 }
 
 module "application_insights" {
+  count            = var.native_otlp_enabled ? 1 : 0
   source           = "../modules/application-insights"
   application_type = var.application_insights.application_type
   location         = var.location
   name             = "appi-${local.suffix}"
-  native_otlp = {
+  native_otlp = var.native_otlp_enabled ? {
     monitor_workspace_id = var.monitor_workspace_id
-  }
+  } : null
   resource_group_id   = module.resource_group.id
   retention_in_days   = var.application_insights.retention_in_days
   sampling_percentage = var.application_insights.sampling_percentage
@@ -30,7 +31,7 @@ module "application_insights" {
 
 module "model_provider" {
   for_each     = local.model_backends
-  source       = "../modules/gateway-model-provider"
+  source       = "../modules/ai-gateway-model-provider"
   account_id   = each.value.account_id
   endpoint     = each.value.endpoint
   name         = "foundry-${local.suffix}"
@@ -39,7 +40,7 @@ module "model_provider" {
 
 module "model" {
   for_each            = local.model_backends
-  source              = "../modules/gateway-model"
+  source              = "../modules/ai-gateway-model"
   deployment_id       = each.value.deployment_id
   model_version       = each.value.model_version
   name                = "model-${local.suffix}"
@@ -49,7 +50,7 @@ module "model" {
 
 module "model_alias" {
   for_each     = local.model_backends
-  source       = "../modules/gateway-model-alias"
+  source       = "../modules/ai-gateway-model-alias"
   model_id     = module.model[each.key].id
   name         = "model-${local.suffix}"
   workspace_id = local.default_workspace_id
@@ -75,8 +76,8 @@ module "telemetry_publisher" {
 
 module "telemetry_exporter" {
   for_each                = local.telemetry_exporters
-  source                  = "../modules/gateway-telemetry-exporter"
-  application_insights_id = module.application_insights.id
+  source                  = "../modules/ai-gateway-telemetry-exporter"
+  application_insights_id = module.application_insights[0].id
   endpoints               = each.value.endpoints
   name                    = "otlp-${local.suffix}"
   workspace_id            = local.default_workspace_id

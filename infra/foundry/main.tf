@@ -36,12 +36,12 @@ module "model" {
 module "application_insights" {
   source                     = "../modules/application-insights"
   application_type           = var.application_insights.application_type
-  export_connection_metadata = true
+  export_connection_metadata = var.project_telemetry_connection_enabled
   location                   = var.location
   name                       = "appi-${local.suffix}"
-  native_otlp = {
+  native_otlp = var.native_otlp_enabled ? {
     monitor_workspace_id = var.monitor_workspace_id
-  }
+  } : null
   resource_group_id   = module.resource_group.id
   retention_in_days   = var.application_insights.retention_in_days
   sampling_percentage = var.application_insights.sampling_percentage
@@ -53,17 +53,32 @@ module "diagnostics" {
   name         = "aif-${local.suffix}"
   resource_id  = module.account.id
   workspace_id = var.workspace_id
-  # No allLogs, RequestResponse or Trace categories: these can expose payloads.
+  # Only Audit is enabled. Match the verified ARM GET order and disabled
+  # categories explicitly; RequestResponse/Trace payload capture stays off.
   log_categories = var.diagnostic_log_categories
+  disabled_log_categories = [
+    "RequestResponse",
+    "AzureOpenAIRequestUsage",
+    "Trace",
+    "ManagedNetworkEvent",
+  ]
+  disabled_metric_categories = ["AllMetrics"]
 }
 
 module "project_telemetry_connection" {
+  count                   = var.project_telemetry_connection_enabled ? 1 : 0
   source                  = "../modules/foundry-project-connection"
   application_insights_id = module.application_insights.id
   connection_string       = module.application_insights.connection_string
   metadata_version        = var.application_insights_metadata_version
   name                    = "appi-${local.suffix}"
   project_id              = module.project.id
+  depends_on              = [module.telemetry_publisher]
+}
+
+moved {
+  from = module.project_telemetry_connection
+  to   = module.project_telemetry_connection[0]
 }
 
 module "gateway_inference" {
@@ -72,6 +87,16 @@ module "gateway_inference" {
   principal_id = each.value
   # Cognitive Services OpenAI User includes responses/chat inference, unlike broader Foundry User.
   role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/5e0bd9bd-7b93-4f28-af87-19fc36ad61bd"
+  scope_id           = module.account.id
+}
+
+module "gateway_foundry_user" {
+  for_each     = var.gateway_foundry_user_principals
+  source       = "../modules/role-assignment"
+  principal_id = each.value
+  # Foundry User is the role used by the AI Gateway Foundry integration.
+  # https://learn.microsoft.com/en-us/azure/ai-gateway/quickstart-create-ai-gateway
+  role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/53ca6127-db72-4b80-b1b0-d745d6d5456d"
   scope_id           = module.account.id
 }
 
