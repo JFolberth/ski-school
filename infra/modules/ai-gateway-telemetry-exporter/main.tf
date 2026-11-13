@@ -21,7 +21,7 @@ resource "azapi_resource" "this" {
       }
     }
   }
-   # Without a version map AzAPI tracks a private hash and sends all write-only
+  # Without a version map AzAPI tracks a private hash and sends all write-only
   # fields on each create/update, including updates to unrelated body fields.
   # https://github.com/Azure/terraform-provider-azapi/blob/v2.13.0/docs/guides/feature_ephemeral_resource.md
   sensitive_body = {

@@ -34,7 +34,7 @@ module "model_provider" {
   for_each     = local.model_backends
   source       = "../modules/ai-gateway-model-provider"
   account_id   = each.value.account_id
- endpoint     = each.value.endpoint == null ? var.model_backend_endpoint : each.value.endpoint
+  endpoint     = each.value.endpoint == null ? var.model_backend_endpoint : each.value.endpoint
   name         = "foundry-${local.suffix}"
   workspace_id = local.default_workspace_id
 }

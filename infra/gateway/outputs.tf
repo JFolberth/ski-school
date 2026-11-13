@@ -4,7 +4,7 @@ output "application_insights_id" {
 }
 
 output "application_insights_otlp" {
-    description = "Asynchronous component DCR metadata, null until native OTLP is enabled. Endpoints are not exported; retrieve the actual signal endpoints privately from the component for a later approved stage."
+  description = "Asynchronous component DCR metadata, null until native OTLP is enabled. Endpoints are not exported; retrieve the actual signal endpoints privately from the component for a later approved stage."
   value       = try(module.application_insights[0].otlp, null)
 }
 

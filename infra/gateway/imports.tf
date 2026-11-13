@@ -1,4 +1,4 @@
- Recover only the verified orphan in the approved gateway-dev state.
+# Recover only the verified orphan in the approved gateway-dev state.
 # Other targets must verify their own ownership before adding an import.
 # Monitoring Metrics Publisher; the DCR input is validated against this component.
 # https://registry.terraform.io/providers/Azure/azapi/2.13.0/docs/resources/resource#import

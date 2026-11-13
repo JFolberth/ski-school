@@ -86,22 +86,22 @@ variable "gateway_foundry_user_principals" {
   default     = {}
   nullable    = false
   validation {
-      condition     = alltrue([for principal_id in values(var.gateway_foundry_user_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
+    condition     = alltrue([for principal_id in values(var.gateway_foundry_user_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
     error_message = "Supply actual gateway managed identity principal object UUIDs under stable labels."
-     validation {
+  }
+  validation {
     condition     = length(setintersection(toset([for principal_id in values(var.gateway_foundry_user_principals) : lower(principal_id)]), toset([for principal_id in values(var.gateway_principals) : lower(principal_id)]))) == 0
     error_message = "Do not grant both Foundry User and Cognitive Services OpenAI User to the same gateway principal."
   }
-  }
 }
 
-variable "variable "gateway_principals" {" {
+variable "gateway_principals" {
   type        = map(string)
   description = "Existing gateway system-assigned principal UUIDs under explicit stable keys. Populate after gateway identity creation; this root grants only Cognitive Services OpenAI User at the verified account inference scope."
   default     = {}
   nullable    = false
   validation {
-       condition     = alltrue([for principal_id in values(var.gateway_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
+    condition     = alltrue([for principal_id in values(var.gateway_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
     error_message = "Supply actual gateway managed identity principal object UUIDs under stable labels."
   }
 }
@@ -197,13 +197,6 @@ variable "native_otlp_enabled" {
   nullable    = false
 }
 
-variable "project_description" {
-  type        = string
-  description = "Non-secret human-readable project description."
-  default     = "Michigan skiing hosted-agent project."
-  nullable    = false
-}
-
 variable "project_acr_connection" {
   type = object({
     registry_id           = string
@@ -221,6 +214,13 @@ variable "project_acr_connection" {
     )
     error_message = "Supply an existing ACR ARM ID, login hostname, and lowercase repository path without tags/digests or condition-expression characters, or null."
   }
+}
+
+variable "project_description" {
+  type        = string
+  description = "Non-secret human-readable project description."
+  default     = "Michigan skiing hosted-agent project."
+  nullable    = false
 }
 
 variable "project_display_name" {

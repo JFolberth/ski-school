@@ -62,7 +62,7 @@ variable "model_backend" {
   type = object({
     account_id          = string
     deployment_id       = string
-endpoint            = optional(string)
+    endpoint            = optional(string)
     model_version       = string
     supported_endpoints = optional(set(string), ["/openai/v1/responses"])
   })
@@ -155,7 +155,7 @@ variable "telemetry_exporter" {
       var.native_otlp_enabled &&
       try(module.application_insights[0].otlp.data_collection_rule_id, null) != null &&
       var.telemetry_exporter.data_collection_rule_id == try(module.application_insights[0].otlp.data_collection_rule_id, null) &&
-       alltrue([for endpoint in values(var.telemetry_exporter.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))])
+      alltrue([for endpoint in values(var.telemetry_exporter.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))])
     )
     error_message = "Enable native OTLP with a region-compatible workspace pair, then supply this component's actual non-null DCR and signal endpoints in a separately approved stage."
   }

@@ -114,14 +114,7 @@ variable "max_replicas" {
   description = "Maximum number of frontend replicas."
   type        = number
   nullable    = false
-   default     = 1
-}
-
-variable "container_cpu" {
-  description = "CPU cores allocated to the frontend container."
-  type        = number
-  nullable    = false
-  default     = 0.25
+  default     = 1
 }
 
 variable "min_replicas" {
@@ -131,28 +124,15 @@ variable "min_replicas" {
   default     = 0
 }
 
-variable "max_replicas" {
-  description = "Maximum number of frontend replicas."
-  type        = number
-  nullable    = false
-  default     = 1
-}
 variable "name_prefix" {
   description = "Short lowercase prefix for frontend resources; must be unique where Azure requires it."
   type        = string
   nullable    = false
   default     = "ski-frontend"
-    validation {
+  validation {
     condition     = can(regex("^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$", var.name_prefix))
     error_message = "name_prefix must be 3-20 lowercase letters, digits, or hyphens, beginning and ending with a letter or digit."
   }
-}
-
-variable "http_concurrent_requests" {
-  description = "Concurrent HTTP requests per replica before scaling."
-  type        = number
-  nullable    = false
-  default     = 10
 }
 
 variable "resource_group_name" {

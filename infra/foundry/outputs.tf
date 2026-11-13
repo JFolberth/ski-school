@@ -54,7 +54,7 @@ output "project_id" {
 }
 
 output "project_principal_id" {
-   description = "Project system-assigned image-pull principal; NOT the platform-created runtime agent principal."
+  description = "Project system-assigned image-pull principal; NOT the platform-created runtime agent principal."
   value       = module.project.principal_id
 }
 

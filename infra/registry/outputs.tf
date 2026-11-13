@@ -1,3 +1,4 @@
+output "registry_id" {
   description = "Registry ARM ID for the Foundry project connection and project-owned pull assignment handoff."
   value       = module.registry.id
 }

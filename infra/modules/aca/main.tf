@@ -265,7 +265,7 @@ resource "azapi_resource" "diagnostic_settings" {
           category = "ContainerAppSystemLogs"
           enabled  = true
         }
-     ], [for category in var.diagnostic_disabled_categories : {
+        ], [for category in var.diagnostic_disabled_categories : {
           category = category
           enabled  = false
       }])

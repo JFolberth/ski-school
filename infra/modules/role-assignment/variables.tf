@@ -10,7 +10,7 @@ variable "condition" {
 
 variable "principal_id" {
   type        = string
-    description = "User or service principal object UUID, including a Foundry agent instance identity; never an application/client ID."
+  description = "User or service principal object UUID, including a Foundry agent instance identity; never an application/client ID."
   nullable    = false
   validation {
     condition     = can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", var.principal_id))

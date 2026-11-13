@@ -1,5 +1,5 @@
 resource "azapi_resource" "this" {
-   # Keep the same state address when choosing a contract.
+  # Keep the same state address when choosing a contract.
   # Stable contract: https://learn.microsoft.com/azure/templates/microsoft.insights/2020-02-02/components
   type      = var.native_otlp == null || var.gateway_otlp_schema_exception ? "Microsoft.Insights/components@2020-02-02" : "Microsoft.Insights/components@2025-01-23-preview"
   name      = var.name
@@ -28,7 +28,7 @@ resource "azapi_resource" "this" {
       AzureMonitorWorkspaceResourceId    = var.native_otlp.monitor_workspace_id
     })
   }
- response_export_values = concat(var.export_connection_metadata ? ["properties.ConnectionString"] : [], var.native_otlp == null ? [] : ["properties.DataCollectionRuleResourceId"], var.native_otlp == null || var.gateway_otlp_schema_exception ? [] : [
+  response_export_values = concat(var.export_connection_metadata ? ["properties.ConnectionString"] : [], var.native_otlp == null ? [] : ["properties.DataCollectionRuleResourceId"], var.native_otlp == null || var.gateway_otlp_schema_exception ? [] : [
     "properties.DataCollectionRuleResourceId",
     "properties.OTLPLogsEndpoint",
     "properties.OTLPMetricsEndpoint",
