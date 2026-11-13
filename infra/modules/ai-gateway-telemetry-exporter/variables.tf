@@ -12,6 +12,7 @@ variable "endpoints" {
   })
   description = "Actual full service-returned OTLP signal URLs, including their paths; no constructed defaults, credentials or query strings."
   nullable    = false
+  sensitive   = true
   validation {
     condition     = alltrue([for endpoint in values(var.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))])
     error_message = "Provide actual full HTTPS OTLP signal URLs without credentials, query strings or fragments."

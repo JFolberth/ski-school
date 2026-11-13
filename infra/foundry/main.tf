@@ -22,6 +22,16 @@ module "project" {
   name         = "proj-${local.suffix}"
 }
 
+module "agent_deployer" {
+  for_each       = var.agent_deployer_principals
+  source         = "../modules/role-assignment"
+  principal_id   = each.value
+  principal_type = "User"
+  # Foundry User permits agent read and write at the project scope.
+  role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/53ca6127-db72-4b80-b1b0-d745d6d5456d"
+  scope_id           = module.project.id
+}
+
 module "model" {
   source                 = "../modules/model-deployment"
   account_id             = module.account.id
@@ -32,6 +42,43 @@ module "model" {
   sku_name               = var.model_sku_name
   version_upgrade_option = var.model_version_upgrade_option
 }
+
+module "project_acr_connection" {
+  for_each              = var.project_acr_connection == null ? {} : { backend = var.project_acr_connection }
+  source                = "../modules/foundry-project-acr-connection"
+  name                  = "acr-${local.suffix}"
+  project_id            = module.project.id
+  project_principal_id  = module.project.principal_id
+  registry_id           = each.value.registry_id
+  registry_login_server = each.value.registry_login_server
+}
+# Inspect the separately managed ACR from its ARM ID; no registry resource is
+# managed or duplicated in this Foundry root.
+data "azapi_resource" "project_acr" {
+  for_each               = var.project_acr_connection == null ? {} : { backend = var.project_acr_connection }
+  type                   = "Microsoft.ContainerRegistry/registries@2026-09-01-preview"
+  resource_id            = each.value.registry_id
+  response_export_values = ["properties.roleAssignmentMode"]
+}
+# Project system identity pulls the image; this is NOT the runtime agent identity.
+# https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions
+module "project_acr_image_pull" {
+  for_each     = var.project_acr_connection == null ? {} : { backend = var.project_acr_connection }
+  source       = "../modules/role-assignment"
+  principal_id = module.project.principal_id
+  # AcrPull (legacy); Container Registry Repository Reader (ABAC mode).
+  # Direct indexing deliberately rejects missing/unknown ARM permission modes.
+  # Built-in role names are documented beside their GUIDs in locals.tf.
+  role_definition_id = "/subscriptions/${split("/", each.value.registry_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/${local.project_acr_pull_roles[data.azapi_resource.project_acr[each.key].output.properties.roleAssignmentMode]}"
+  scope_id           = each.value.registry_id
+  condition = data.azapi_resource.project_acr[each.key].output.properties.roleAssignmentMode == "AbacRepositoryPermissions" ? join(" ", [
+    "((!(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/content/read'})",
+    "AND !(ActionMatches{'Microsoft.ContainerRegistry/registries/repositories/metadata/read'}))",
+    "OR (@Request[Microsoft.ContainerRegistry/registries/repositories:name]",
+    "StringEqualsIgnoreCase '${each.value.repository}'))"
+  ]) : null
+}
+
 
 module "application_insights" {
   source                     = "../modules/application-insights"

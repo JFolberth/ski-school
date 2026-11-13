@@ -43,13 +43,18 @@ output "model_deployment_id" {
   value       = module.model.id
 }
 
+output "project_acr_connection_id" {
+  description = "Image-pull connection ARM ID, null when deferred. Project-specific ACR pull RBAC is owned by this Foundry root."
+  value       = try(module.project_acr_connection["backend"].id, null)
+}
+
 output "project_id" {
   description = "Foundry project ARM ID."
   value       = module.project.id
 }
 
 output "project_principal_id" {
-  description = "Project principal for explicit scoped handoff; not a verified hosted-agent image-pull principal."
+   description = "Project system-assigned image-pull principal; NOT the platform-created runtime agent principal."
   value       = module.project.principal_id
 }
 

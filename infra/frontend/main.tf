@@ -11,19 +11,20 @@ resource "azapi_resource" "frontend_resource_group" {
 module "aca" {
   source = "../modules/aca"
 
-  acr_resource_id            = var.acr_resource_id
-  container_cpu              = var.container_cpu
-  container_image_digest     = var.container_image_digest
-  container_image_repository = var.container_image_repository
-  container_memory           = var.container_memory
-  deployment_timestamp       = var.deployment_timestamp
-  environment_name           = var.environment
-  http_concurrent_requests   = var.http_concurrent_requests
-  location                   = var.location
-  log_analytics_workspace_id = var.log_analytics_workspace_id
-  max_replicas               = var.max_replicas
-  min_replicas               = var.min_replicas
-  name_prefix                = var.name_prefix
-  resource_group_id          = azapi_resource.frontend_resource_group.id
-  tags                       = local.tags
+  acr_resource_id                = var.acr_resource_id
+  container_cpu                  = var.container_cpu
+  container_image_digest         = var.container_image_digest
+  container_image_repository     = var.container_image_repository
+  container_memory               = var.container_memory
+  deployment_timestamp           = var.deployment_timestamp
+  diagnostic_disabled_categories = var.diagnostic_disabled_categories
+  environment_name               = var.environment
+  http_concurrent_requests       = var.http_concurrent_requests
+  location                       = var.location
+  log_analytics_workspace_id     = var.log_analytics_workspace_id
+  max_replicas                   = var.max_replicas
+  min_replicas                   = var.min_replicas
+  name_prefix                    = var.name_prefix
+  resource_group_id              = azapi_resource.frontend_resource_group.id
+  tags                           = local.tags
 }

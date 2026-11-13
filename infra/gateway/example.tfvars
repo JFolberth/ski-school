@@ -12,16 +12,16 @@ gateway_sku = {
   name = "Standard"
 }
 location = "eastus2"
-# Keep native OTLP disabled until the Log Analytics and Azure Monitor workspace
-# regions are verified for the documented ingestion topology.
-monitor_workspace_id = null
 # First create the gateway identity, grant it inference in Foundry, then supply
 # the Foundry gateway_backend output here to create one provider/model/alias.
 model_backend = null
 # Explicit stable labels -> actual caller principal UUIDs; grants alias scope only.
-model_callers       = {}
-native_otlp_enabled = false
-tags                = {}
-# After native OTLP metadata is complete, supply application_insights_otlp here.
+model_callers = {}
+# Supply the existing East US 2 Monitor workspace ID and the replacement
+# Log Analytics workspace ID before enabling native OTLP in a reviewed stage.
+monitor_workspace_id = null
+native_otlp_enabled  = false
+tags                 = {}
+# Later supply the component DCR and actual endpoints securely via TF_VAR_telemetry_exporter.
 telemetry_exporter = null
 workspace_id       = null

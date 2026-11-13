@@ -1,7 +1,8 @@
 # Copy to an ignored root-local dev.tfvar and select explicitly with -var-file=dev.tfvar.
 # Supply subscription_id, tenant_id, workspace_id, model_capacity and model_version.
 # Candidate model version: 2026-03-17; target support/quota remain unverified.
-account_sku_name = "S0"
+account_sku_name          = "S0"
+agent_deployer_principals = {}
 application_insights = {
   application_type    = "web"
   retention_in_days   = 30
@@ -24,7 +25,14 @@ model_version_upgrade_option = "NoAutoUpgrade"
 # Set a Monitor workspace ID when enabled; null when native OTLP is deferred.
 # monitor_workspace_id = "<actual Azure Monitor workspace ARM ID>"
 native_otlp_enabled = true
-project_description = "Michigan skiing hosted-agent project."
-tags                = {}
+# Populate with reviewed registry outputs before releasing the hosted agent.
+# project_acr_connection = {
+#   registry_id           = "<existing-registry-arm-id>"
+#   registry_login_server = "<existing-registry-login-hostname>"
+#   repository            = "ski-backend"
+# }
+project_acr_connection = null
+project_description    = "Michigan skiing hosted-agent project."
+tags                   = {}
 # Add only a verified actual runtime telemetry emitter, not an assumed identity.
 telemetry_publisher_principals = {}

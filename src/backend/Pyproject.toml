@@ -1,0 +1,16 @@
+[project]
+name = "ski-school-backend"
+version = "0.1.0"
+description = "Michigan skiing agent hosted by Microsoft Foundry."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "agent-framework-foundry-hosting==1.0.0b261106",
+    "agent-framework-openai==1.18.1",
+    "azure-ai-agentserver-core==2.3.0",
+    "azure-ai-agentserver-responses==2.4.0",
+    "azure-identity==1.27.0",
+    "httpx==0.28.1",
+    "openai==3.49.0",
+]
+[tool.uv]
+package = false

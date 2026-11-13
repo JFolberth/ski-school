@@ -13,9 +13,6 @@ resource "azapi_resource" "this" {
         resourceId = var.application_insights_id
       }
       openTelemetry = {
-        metricsEndpoint = var.endpoints.metrics
-        logsEndpoint    = var.endpoints.logs
-        tracesEndpoint  = var.endpoints.traces
         credentials = {
           managedIdentity = {
             resource = "https://monitor.azure.com"
@@ -24,4 +21,18 @@ resource "azapi_resource" "this" {
       }
     }
   }
+   # Without a version map AzAPI tracks a private hash and sends all write-only
+  # fields on each create/update, including updates to unrelated body fields.
+  # https://github.com/Azure/terraform-provider-azapi/blob/v2.13.0/docs/guides/feature_ephemeral_resource.md
+  sensitive_body = {
+    properties = {
+      openTelemetry = {
+        metricsEndpoint = var.endpoints.metrics
+        logsEndpoint    = var.endpoints.logs
+        tracesEndpoint  = var.endpoints.traces
+      }
+    }
+  }
+  # Azure may echo endpoints in GET responses; never store them as raw output.
+  response_export_values = []
 }

@@ -4,13 +4,14 @@ output "application_insights_id" {
 }
 
 output "application_insights_otlp" {
-  description = "Non-secret asynchronous component metadata, null until native OTLP is enabled. Once complete, pass this exact object as telemetry_exporter in a later approved stage."
+    description = "Asynchronous component DCR metadata, null until native OTLP is enabled. Endpoints are not exported; retrieve the actual signal endpoints privately from the component for a later approved stage."
   value       = try(module.application_insights[0].otlp, null)
 }
 
 output "gateway_hostname" {
   description = "Service-returned runtime hostname; use a configured alias and Entra caller authorization."
   value       = module.gateway.hostname
+  sensitive   = true
 }
 
 output "gateway_id" {

@@ -4,5 +4,6 @@ locals {
   suffix               = "${var.base_name}-${var.environment}-${local.region}"
   default_workspace_id = "${module.gateway.id}/workspaces/default"
   model_backends       = var.model_backend == null ? {} : { primary = var.model_backend }
-  telemetry_exporters  = var.telemetry_exporter == null ? {} : { primary = var.telemetry_exporter }
+  # Only the presence of the handoff is public; endpoint values remain sensitive.
+  telemetry_exporters = nonsensitive(var.telemetry_exporter == null) ? toset([]) : toset(["primary"])
 }

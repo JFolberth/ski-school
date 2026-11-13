@@ -10,10 +10,10 @@ output "id" {
 }
 
 output "otlp" {
-  description = "Non-secret service-returned native OTLP metadata. Null fields mean not yet ready; never substitute constructed endpoints or a Monitor-workspace default DCR."
+    description = "Service-returned native OTLP metadata. Gateway endpoints are deliberately not exported; null fields may also mean metadata is not yet ready."
   value = var.native_otlp == null ? null : {
     data_collection_rule_id = try(azapi_resource.this.output.properties.DataCollectionRuleResourceId, null)
-    endpoints = {
+endpoints = var.gateway_otlp_schema_exception ? null : {
       logs    = try(azapi_resource.this.output.properties.OTLPLogsEndpoint, null)
       metrics = try(azapi_resource.this.output.properties.OTLPMetricsEndpoint, null)
       traces  = try(azapi_resource.this.output.properties.OTLPTracesEndpoint, null)

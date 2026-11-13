@@ -10,7 +10,11 @@ resource "azapi_resource" "this" {
       anonymousPullEnabled = false
       publicNetworkAccess  = "Enabled"
       roleAssignmentMode   = "LegacyRegistryPermissions"
+           # Required by Foundry image pulling with ARM-audience Entra tokens.
+      policies = {
+        azureADAuthenticationAsArmPolicy = { status = "enabled" }
+      }
     }
   }
-  response_export_values = ["properties.loginServer"]
+  response_export_values = ["properties.loginServer", "properties.roleAssignmentMode"]
 }
