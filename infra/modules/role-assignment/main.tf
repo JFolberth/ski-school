@@ -3,10 +3,13 @@ resource "azapi_resource" "this" {
   name      = uuidv5("url", lower("${var.scope_id}|${var.principal_id}|${var.role_definition_id}"))
   parent_id = var.scope_id
   body = {
-    properties = {
+    properties = merge({
       principalId      = var.principal_id
-      principalType    = "ServicePrincipal"
+      principalType    = var.principal_type
       roleDefinitionId = var.role_definition_id
-    }
+      }, var.condition == null ? {} : {
+      condition        = var.condition
+      conditionVersion = "2.0"
+    })
   }
 }

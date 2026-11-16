@@ -31,12 +31,12 @@ variable "location" {
 
 variable "monitor_workspace_location" {
   type        = string
-  description = "Azure Monitor workspace location, independently configured from the resource group and Log Analytics workspace; East US 2 is approved."
+  description = "Azure location and naming region of the existing logging resource group. Keep this unchanged when relocating the workspace."
   default     = "eastus2"
   nullable    = false
   validation {
     condition     = var.monitor_workspace_location == "eastus2"
-    error_message = "Only eastus2 is approved for the Azure Monitor workspace."
+    error_message = "Only northcentralus is approved for the existing logging resource group."
   }
 }
 
@@ -73,6 +73,16 @@ variable "tenant_id" {
     error_message = "Supply the explicit workload tenant UUID."
   }
 
+}
+
+variable "workspace_location" {
+  type        = string
+  description = "Log Analytics workspace location, independent of the resource group. Null preserves the resource-group location."
+  default     = null
+  validation {
+    condition     = var.workspace_location == null ? true : contains(["northcentralus", "eastus2"], var.workspace_location)
+    error_message = "The Log Analytics workspace location must be northcentralus or eastus2."
+  }
 }
 
 variable "workspace_retention_in_days" {

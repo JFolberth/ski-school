@@ -12,6 +12,13 @@ variable "acr_resource_id" {
   }
 }
 
+variable "container_cpu" {
+  description = "CPU cores allocated to the frontend container."
+  type        = number
+  nullable    = false
+  default     = 0.25
+}
+
 variable "container_image_digest" {
   description = "Immutable sha256 digest of the published frontend image."
   type        = string
@@ -38,6 +45,28 @@ variable "container_image_repository" {
   }
 }
 
+variable "container_memory" {
+  description = "Memory allocated to the frontend container."
+  type        = string
+  nullable    = false
+  default     = "0.5Gi"
+}
+variable "deployment_timestamp" {
+  description = "UTC timestamp supplied by the deployment process, or null when unavailable."
+  type        = string
+  default     = null
+}
+variable "diagnostic_disabled_categories" {
+  description = "Additional supported diagnostic log categories to keep explicitly disabled."
+  type        = list(string)
+  default     = []
+  nullable    = false
+  validation {
+    condition     = length(distinct(var.diagnostic_disabled_categories)) == length(var.diagnostic_disabled_categories) && alltrue([for category in var.diagnostic_disabled_categories : can(regex("^[A-Za-z][A-Za-z0-9]+$", category)) && !contains(["ContainerAppConsoleLogs", "ContainerAppSystemLogs"], category)])
+    error_message = "Disabled diagnostic categories must be unique category names distinct from the enabled console and system categories."
+  }
+}
+
 variable "environment" {
   description = "Deployment environment used for resource tags and isolated naming."
   type        = string
@@ -47,6 +76,13 @@ variable "environment" {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "environment must be one of dev, staging, or prod."
   }
+}
+
+variable "http_concurrent_requests" {
+  description = "Concurrent HTTP requests per replica before scaling."
+  type        = number
+  nullable    = false
+  default     = 10
 }
 
 variable "location" {
@@ -74,36 +110,11 @@ variable "log_analytics_workspace_id" {
   }
 }
 
-variable "name_prefix" {
-  description = "Short lowercase prefix for frontend resources; must be unique where Azure requires it."
-  type        = string
-  nullable    = false
-  default     = "ski-frontend"
-
-  validation {
-    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$", var.name_prefix))
-    error_message = "name_prefix must be 3-20 lowercase letters, digits, or hyphens, beginning and ending with a letter or digit."
-  }
-}
-
-variable "container_cpu" {
-  description = "CPU cores allocated to the frontend container."
+variable "max_replicas" {
+  description = "Maximum number of frontend replicas."
   type        = number
   nullable    = false
-  default     = 0.25
-}
-
-variable "container_memory" {
-  description = "Memory allocated to the frontend container."
-  type        = string
-  nullable    = false
-  default     = "0.5Gi"
-}
-
-variable "deployment_timestamp" {
-  description = "UTC timestamp supplied by the deployment process, or null when unavailable."
-  type        = string
-  default     = null
+  default     = 1
 }
 
 variable "min_replicas" {
@@ -113,18 +124,15 @@ variable "min_replicas" {
   default     = 0
 }
 
-variable "max_replicas" {
-  description = "Maximum number of frontend replicas."
-  type        = number
+variable "name_prefix" {
+  description = "Short lowercase prefix for frontend resources; must be unique where Azure requires it."
+  type        = string
   nullable    = false
-  default     = 1
-}
-
-variable "http_concurrent_requests" {
-  description = "Concurrent HTTP requests per replica before scaling."
-  type        = number
-  nullable    = false
-  default     = 10
+  default     = "ski-frontend"
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,18}[a-z0-9]$", var.name_prefix))
+    error_message = "name_prefix must be 3-20 lowercase letters, digits, or hyphens, beginning and ending with a letter or digit."
+  }
 }
 
 variable "resource_group_name" {

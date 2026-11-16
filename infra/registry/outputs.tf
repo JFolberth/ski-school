@@ -1,5 +1,5 @@
 output "registry_id" {
-  description = "Registry scope for a later verified image-pull assignment owned by this root."
+  description = "Registry ARM ID for the Foundry project connection and project-owned pull assignment handoff."
   value       = module.registry.id
 }
 

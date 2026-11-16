@@ -12,6 +12,7 @@ variable "endpoint" {
   type        = string
   description = "Actual Foundry account endpoint; no credentials, query strings or fabricated hostname."
   nullable    = false
+  sensitive   = true
   validation {
     condition     = can(regex("^https://[a-zA-Z0-9.-]+/?$", var.endpoint))
     error_message = "Supply the service-returned HTTPS account origin."

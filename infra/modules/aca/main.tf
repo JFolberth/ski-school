@@ -167,9 +167,9 @@ resource "azapi_resource" "container_app" {
             ]
             probes = [
               {
-                failureThreshold    = 30
-                initialDelaySeconds = 1
-                periodSeconds       = 5
+                failureThreshold    = 3
+                initialDelaySeconds = 10
+                periodSeconds       = 10
                 successThreshold    = 1
                 timeoutSeconds      = 2
                 type                = "Startup"
@@ -193,12 +193,12 @@ resource "azapi_resource" "container_app" {
                 }
               },
               {
-                failureThreshold    = 3
-                initialDelaySeconds = 10
-                periodSeconds       = 10
+                failureThreshold    = 30
+                initialDelaySeconds = 1
+                periodSeconds       = 5
                 successThreshold    = 1
                 timeoutSeconds      = 2
-                type                = "Liveness"
+                type                = "Startup"
                 httpGet = {
                   path   = "/healthz"
                   port   = 8080
@@ -256,7 +256,7 @@ resource "azapi_resource" "diagnostic_settings" {
 
   body = {
     properties = {
-      logs = [
+      logs = concat([
         {
           category = "ContainerAppConsoleLogs"
           enabled  = true
@@ -265,7 +265,10 @@ resource "azapi_resource" "diagnostic_settings" {
           category = "ContainerAppSystemLogs"
           enabled  = true
         }
-      ]
+        ], [for category in var.diagnostic_disabled_categories : {
+          category = category
+          enabled  = false
+      }])
       workspaceId = var.log_analytics_workspace_id
     }
   }

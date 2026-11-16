@@ -7,8 +7,8 @@ module "resource_group" {
 
 module "workspace" {
   source            = "../modules/log-analytics"
-  location          = var.location
-  name              = "log-${local.suffix}"
+  location          = local.workspace_location
+  name              = "log-${var.base_name}-${var.environment}-${local.region_abbreviations[local.workspace_location]}"
   resource_group_id = module.resource_group.id
   retention_in_days = var.workspace_retention_in_days
   sku_name          = var.workspace_sku_name

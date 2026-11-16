@@ -15,11 +15,12 @@ module "gateway" {
 }
 
 module "application_insights" {
-  count            = var.native_otlp_enabled ? 1 : 0
-  source           = "../modules/application-insights"
-  application_type = var.application_insights.application_type
-  location         = var.location
-  name             = "appi-${local.suffix}"
+  count                         = var.native_otlp_enabled ? 1 : 0
+  source                        = "../modules/application-insights"
+  application_type              = var.application_insights.application_type
+  gateway_otlp_schema_exception = true
+  location                      = var.location
+  name                          = "appi-${local.suffix}"
   native_otlp = var.native_otlp_enabled ? {
     monitor_workspace_id = var.monitor_workspace_id
   } : null
@@ -33,7 +34,7 @@ module "model_provider" {
   for_each     = local.model_backends
   source       = "../modules/ai-gateway-model-provider"
   account_id   = each.value.account_id
-  endpoint     = each.value.endpoint
+  endpoint     = each.value.endpoint == null ? var.model_backend_endpoint : each.value.endpoint
   name         = "foundry-${local.suffix}"
   workspace_id = local.default_workspace_id
 }
@@ -70,15 +71,15 @@ module "telemetry_publisher" {
   source       = "../modules/role-assignment"
   principal_id = module.gateway.principal_id
   # Monitoring Metrics Publisher permits telemetry ingestion on this DCR.
-  role_definition_id = "/subscriptions/${split("/", each.value.data_collection_rule_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
-  scope_id           = each.value.data_collection_rule_id
+  role_definition_id = "/subscriptions/${split("/", nonsensitive(var.telemetry_exporter.data_collection_rule_id))[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
+  scope_id           = nonsensitive(var.telemetry_exporter.data_collection_rule_id)
 }
 
 module "telemetry_exporter" {
   for_each                = local.telemetry_exporters
   source                  = "../modules/ai-gateway-telemetry-exporter"
   application_insights_id = module.application_insights[0].id
-  endpoints               = each.value.endpoints
+  endpoints               = var.telemetry_exporter.endpoints
   name                    = "otlp-${local.suffix}"
   workspace_id            = local.default_workspace_id
   # Registration requires DCR publish authorization, which is not an exporter property.

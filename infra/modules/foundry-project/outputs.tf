@@ -4,6 +4,6 @@ output "id" {
 }
 
 output "principal_id" {
-  description = "Project system-assigned principal; do not assume agent image-pull equivalence."
+  description = "Project system-assigned principal used by Foundry infrastructure for ACR image pulling; runtime agent identity is separate."
   value       = azapi_resource.this.identity[0].principal_id
 }

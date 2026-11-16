@@ -62,7 +62,7 @@ variable "model_backend" {
   type = object({
     account_id          = string
     deployment_id       = string
-    endpoint            = string
+    endpoint            = optional(string)
     model_version       = string
     supported_endpoints = optional(set(string), ["/openai/v1/responses"])
   })
@@ -71,6 +71,21 @@ variable "model_backend" {
   validation {
     condition     = var.model_backend == null ? true : startswith(lower(var.model_backend.deployment_id), "${lower(var.model_backend.account_id)}/deployments/")
     error_message = "The backend deployment must belong to the explicitly supplied Foundry account."
+  }
+  validation {
+    condition     = var.model_backend == null ? var.model_backend_endpoint == null : (var.model_backend.endpoint == null) != (var.model_backend_endpoint == null)
+    error_message = "For a configured backend supply exactly one actual endpoint, either in model_backend or via the sensitive model_backend_endpoint input."
+  }
+}
+
+variable "model_backend_endpoint" {
+  type        = string
+  description = "Sensitive alternative to model_backend.endpoint; supply the actual existing Foundry account endpoint through TF_VAR_model_backend_endpoint."
+  default     = null
+  sensitive   = true
+  validation {
+    condition     = var.model_backend_endpoint == null ? true : can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_backend_endpoint))
+    error_message = "Supply the service-returned HTTPS account origin."
   }
 }
 
@@ -128,8 +143,9 @@ variable "telemetry_exporter" {
       traces  = string
     })
   })
-  description = "Later-stage exact gateway application_insights_otlp output after all metadata is non-null. This root owns the publisher assignment on that service-created component DCR, not the DCR/managed RG. Requires narrow roleAssignments/write there; no scripts, fabricated endpoints or default Monitor DCR."
+  description = "Later-stage handoff: privately retrieve this component's actual DCR and signal endpoints together directly from Azure. Terraform checks the DCR against component output but cannot attest endpoint provenance. Publisher role assignment requires narrow roleAssignments/write on the service-created DCR."
   default     = null
+  sensitive   = true
   validation {
     condition     = var.telemetry_exporter == null ? true : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Insights/dataCollectionRules/[^/]+$", var.telemetry_exporter.data_collection_rule_id))
     error_message = "Supply the actual component OTLP data collection rule ARM ID."
@@ -139,9 +155,7 @@ variable "telemetry_exporter" {
       var.native_otlp_enabled &&
       try(module.application_insights[0].otlp.data_collection_rule_id, null) != null &&
       var.telemetry_exporter.data_collection_rule_id == try(module.application_insights[0].otlp.data_collection_rule_id, null) &&
-      var.telemetry_exporter.endpoints.logs == try(module.application_insights[0].otlp.endpoints.logs, null) &&
-      var.telemetry_exporter.endpoints.metrics == try(module.application_insights[0].otlp.endpoints.metrics, null) &&
-      var.telemetry_exporter.endpoints.traces == try(module.application_insights[0].otlp.endpoints.traces, null)
+      alltrue([for endpoint in values(var.telemetry_exporter.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))])
     )
     error_message = "Enable native OTLP with a region-compatible workspace pair, then supply this component's actual non-null DCR and signal endpoints in a separately approved stage."
   }

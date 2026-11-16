@@ -16,6 +16,17 @@ variable "export_connection_metadata" {
   nullable    = false
 }
 
+variable "gateway_otlp_schema_exception" {
+  type        = bool
+  description = "Approved only for the gateway-owned OTLP component's 2020-02-02 contract; other callers must leave this false."
+  default     = false
+  nullable    = false
+  validation {
+    condition     = !var.gateway_otlp_schema_exception || var.native_otlp != null
+    error_message = "The gateway OTLP schema exception requires native OTLP to be enabled."
+  }
+}
+
 variable "location" {
   type        = string
   description = "Component Azure location, independent of workspace location."

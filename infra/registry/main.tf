@@ -22,6 +22,3 @@ module "diagnostics" {
   # Match ACR's normalized disabled metrics without enabling collection.
   disabled_metric_categories = ["AllMetrics"]
 }
-
-# Image-pull RBAC is deliberately deferred until the hosted-agent runtime
-# principal and image-pull identity contract are verified. No placeholder grants.
