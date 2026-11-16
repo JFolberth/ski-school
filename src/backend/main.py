@@ -63,7 +63,7 @@ def create_server() -> ResponsesHostServer:
         base_url=base_url.rstrip("/") + "/",
         api_key=token_provider,
         timeout=60.0,
-        max_retries=2,
+        max_retries=0,
     )
     # Inject a client so ambient OPENAI_* / AZURE_OPENAI_* settings cannot reroute inference.
     client = OpenAIChatClient(model=model_alias, async_client=gateway)

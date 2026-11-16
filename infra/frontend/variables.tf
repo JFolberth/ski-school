@@ -12,6 +12,52 @@ variable "acr_resource_id" {
   }
 }
 
+variable "bridge_cpu" {
+  description = "CPU cores allocated to the loopback-only FastAPI bridge sidecar."
+  type        = number
+  nullable    = false
+  default     = 0.25
+
+  validation {
+    condition     = var.bridge_cpu >= 0.25 && var.bridge_cpu <= 4 && var.bridge_cpu * 4 == floor(var.bridge_cpu * 4)
+    error_message = "bridge_cpu must be between 0.25 and 4 cores in increments of 0.25."
+  }
+}
+
+variable "bridge_image_digest" {
+  description = "Immutable sha256 digest of the separately published bridge image, serving 127.0.0.1:8089."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^sha256:[0-9a-f]{64}$", var.bridge_image_digest))
+    error_message = "bridge_image_digest must be a full sha256 digest, not a mutable tag."
+  }
+}
+
+variable "bridge_image_repository" {
+  description = "Explicit bridge image repository in the existing ACR, without a hostname, tag, or digest."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[a-z0-9]+([._-][a-z0-9]+)*(\\/[a-z0-9]+([._-][a-z0-9]+)*)*$", var.bridge_image_repository))
+    error_message = "bridge_image_repository must be a lowercase OCI repository path."
+  }
+}
+
+variable "bridge_memory" {
+  description = "Memory allocated to the bridge in Gi; Consumption requires twice its CPU allocation."
+  type        = string
+  nullable    = false
+  default     = "0.5Gi"
+
+  validation {
+    condition     = can(regex("^[0-9]+(\\.[0-9]+)?Gi$", var.bridge_memory))
+    error_message = "bridge_memory must be expressed in Gi, for example 0.5Gi."
+  }
+}
+
 variable "container_cpu" {
   description = "CPU cores allocated to the frontend container."
   type        = number
@@ -71,10 +117,33 @@ variable "environment" {
   description = "Deployment environment used for resource tags and isolated naming."
   type        = string
   nullable    = false
+  default     = "dev"
 
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "environment must be one of dev, staging, or prod."
+  }
+}
+
+variable "foundry_agent_base_url" {
+  description = "Existing agent OpenAI protocol base URL, ending in /endpoint/protocols/openai, not /responses. The endpoint must already support Azure RBAC."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^https://[a-z0-9][a-z0-9-]*\\.services\\.ai\\.azure\\.com/api/projects/[A-Za-z0-9._-]+/agents/[A-Za-z0-9._-]+/endpoint/protocols/openai/?$", var.foundry_agent_base_url))
+    error_message = "foundry_agent_base_url must be an Azure public-cloud Foundry agent OpenAI protocol base URL without credentials, query, or fragment."
+  }
+}
+
+variable "foundry_agent_resource_id" {
+  description = "Existing agent's ARM scope, ending in /accounts/<account>/projects/<project>/agents/<agent>; only this agent receives a runtime role assignment."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("(?i)^/subscriptions/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/resourcegroups/[^/]+/providers/microsoft\\.cognitiveservices/accounts/[^/]+/projects/[A-Za-z0-9._-]+/agents/[A-Za-z0-9._-]+$", var.foundry_agent_resource_id))
+    error_message = "foundry_agent_resource_id must identify one existing Foundry agent, not an account, project, or agent version."
   }
 }
 
@@ -143,6 +212,34 @@ variable "resource_group_name" {
   validation {
     condition     = can(regex("^[A-Za-z0-9._()-]{1,90}$", var.resource_group_name)) && !strcontains(lower(var.resource_group_name), "replace")
     error_message = "resource_group_name must be a real Azure resource group name, not a placeholder."
+  }
+}
+
+variable "session_signing_key" {
+  description = "URL-safe base64 encoding of at least 32 cryptographically random bytes, supplied securely through TF_VAR_session_signing_key for each operation. Never use tfvars, CLI literals, or Terraform/provider/protocol tracing; keep AZAPI_LOG_SENSITIVE_DATA disabled."
+  type        = string
+  nullable    = false
+  sensitive   = true
+  ephemeral   = true
+
+  validation {
+    condition = (
+      can(regex("^[A-Za-z0-9_-]{43,}={0,2}$", var.session_signing_key)) &&
+      length(replace(var.session_signing_key, "=", "")) % 4 != 1 &&
+      (!endswith(var.session_signing_key, "=") || length(var.session_signing_key) % 4 == 0)
+    )
+    error_message = "session_signing_key must be URL-safe base64 encoding of at least 32 random bytes, without whitespace."
+  }
+}
+
+variable "session_signing_key_version" {
+  description = "Non-secret rotation identifier; change whenever the signing key changes to create a revision that loads the new key. Never derive this identifier from the key. Rotation invalidates existing session cookies."
+  type        = string
+  nullable    = false
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.session_signing_key_version))
+    error_message = "session_signing_key_version must be a non-empty, non-secret identifier of at most 64 characters."
   }
 }
 

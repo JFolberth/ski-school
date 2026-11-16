@@ -8,20 +8,6 @@ variable "account_sku_name" {
     error_message = "Only S0 is verified for this AIServices account."
   }
 }
-variable "agent_deployer_principals" {
-  type        = map(string)
-  description = "Explicit user object UUIDs under stable labels; grants Foundry User at the project scope for agent deployment."
-  default     = {}
-  nullable    = false
-  validation {
-    condition     = alltrue([for principal_id in values(var.agent_deployer_principals) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))])
-    error_message = "Supply actual user object UUIDs under stable labels."
-  }
-  validation {
-    condition     = length(distinct([for principal_id in values(var.agent_deployer_principals) : lower(principal_id)])) == length(var.agent_deployer_principals)
-    error_message = "Do not repeat a user object UUID under multiple labels."
-  }
-}
 variable "application_insights" {
   type = object({
     application_type    = optional(string, "web")

@@ -12,3 +12,8 @@ output "container_app_url" {
   description = "HTTPS URL of the public frontend Container App."
   value       = "https://${azapi_resource.container_app.output.properties.configuration.ingress.fqdn}"
 }
+
+output "runtime_principal_id" {
+  description = "System-assigned runtime principal granted access only to the configured existing Foundry agent."
+  value       = azapi_resource.container_app.output.identity.principalId
+}

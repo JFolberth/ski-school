@@ -1,9 +1,9 @@
 resource "azapi_resource" "this" {
-  type      = "Microsoft.ApiManagement/aigateways/workspaces/aliases@2025-09-01-preview"
+  type      = "Microsoft.ApiManagement/aigateways/workspaces/aliases@2026-11-01"
   name      = var.name
   parent_id = var.workspace_id
-  # Approved per-resource contract exception; AzAPI's embedded schema lacks this child type.
-  # https://github.com/Azure-Samples/ai-gateway-foundry-terraform/blob/main/standalone/ai_gateway_models.tf
+  # Approved contract-specific exception; AzAPI lacks the 2026-11-01 alias schema.
+  # https://learn.microsoft.com/en-us/rest/api/aigateway/ai-gateway-alias-resources/create-or-update?view=rest-aigateway-2026-11-01
   schema_validation_enabled = false
   body = {
     properties = {
@@ -13,6 +13,33 @@ resource "azapi_resource" "this" {
         priority   = 0
         weight     = 100
       }]
+      selectionOrder = ["priority"]
+      policies = [
+        {
+          id         = "identity-requests-per-minute"
+          type       = "requestRateLimit"
+          count      = var.policy_limits.requests_per_minute
+          period     = "minute"
+          counterKey = ["identity"]
+          scope      = "resource"
+        },
+        {
+          id         = "identity-tokens-per-minute"
+          type       = "tokenLimit"
+          count      = var.policy_limits.tokens_per_minute
+          period     = "minute"
+          counterKey = ["identity"]
+          scope      = "resource"
+        },
+        {
+          id         = "identity-monthly-cost"
+          type       = "costLimit"
+          amount     = var.policy_limits.monthly_cost_usd
+          period     = "month"
+          counterKey = ["identity"]
+          scope      = "resource"
+        },
+      ]
     }
   }
 }
