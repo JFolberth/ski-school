@@ -45,6 +45,7 @@ Read and follow `.github/copilot-instructions.md` before acting. Do not create p
 ## Terraform Standards
 
 - Inspect nearby Terraform and repository instructions before editing. Follow existing naming, tagging, backend, module-source, and file-layout conventions unless they conflict with correctness or security.
+- Terraform configuration is authoritative for Terraform-managed resources. Reconcile portal changes to the declared configuration instead of automatically preserving them; surface removals and risks in the plan and obtain required approval before applying.
 - Sort `variable` blocks alphabetically by name in every `variables.tf` and matching `.tfvars` file. Apply the same ordering to `output` blocks for consistency.
 - For Azure infrastructure, use the `Azure/azapi` provider exclusively. `hashicorp/azurerm` is not supported in this repository; do not introduce it, and translate any `azurerm` examples into equivalent `azapi_resource` shapes when advising.
 - Terraform's built-in `azurerm` state backend is allowed; it is not the prohibited `hashicorp/azurerm` resource provider. Do not add other clouds or parallel Bicep/ARM infrastructure.
@@ -54,6 +55,7 @@ Read and follow `.github/copilot-instructions.md` before acting. Do not create p
 - Require encrypted remote state with locking, environment isolation, and identity-based access. Do not silently fall back to local state or create shared resources with unconfigured backends.
 - Default Azure-hosted workload authentication to system-assigned managed identity. Verify support for each integration and ask the user if it is not possible before choosing a user-assigned identity. Keys require explicit approval as a last resort after identity-based alternatives are ruled out; do not create a key-based fallback.
 - Scope every identity's access to the minimum required roles/actions and narrowest supported resource scope. Keep runtime/data-plane permissions separate from deployment/management permissions; never add broad administrative roles to work around missing support.
+- Treat human, local, and CI deployment-principal access as an externally provisioned prerequisite. Assume the deployer already has the access required to deploy; never add Terraform role grants for a deployer to resolve a deployment error. Report missing access as an external prerequisite instead. Keep Terraform-managed grants limited to verified workload/runtime and integration identities, with least privilege.
 - Whenever a Terraform role assignment references a role-definition GUID, add an adjacent comment with the built-in role's human-readable name. Keep the comment with the assignment so reviewers can understand the permission without resolving the GUID.
 - Plan backend bootstrap explicitly: define ownership of state storage in Terraform, secure any unavoidable initial state, and specify migration to the approved remote backend. Explain the target, effects, and recovery path and obtain explicit approval before bootstrap operations or backend migration.
 - Apply consistent provider-level default tags where supported, with resource-level additions only when needed.

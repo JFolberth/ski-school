@@ -1,13 +1,13 @@
 resource "azapi_resource" "this" {
-  type      = "Microsoft.ApiManagement/aigateways@2025-09-01-preview"
+  type      = "Microsoft.ApiManagement/aigateways@2026-11-01"
   name      = var.name
   parent_id = var.resource_group_id
   location  = var.location
   identity {
     type = "SystemAssigned"
   }
-  # Approved contract-specific schema exception:
-  # https://github.com/Azure-Samples/ai-gateway-foundry-terraform/blob/main/standalone/ai_gateway.tf
+  # Approved contract-specific schema exception; AzAPI lacks the 2026-11-01 schema.
+  # https://learn.microsoft.com/en-us/rest/api/aigateway/ai-gateway-resources/create-or-update?view=rest-aigateway-2026-11-01
   schema_validation_enabled = false
   body = merge(
     { properties = {} },

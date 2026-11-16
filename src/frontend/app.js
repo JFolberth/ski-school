@@ -8,6 +8,10 @@ const messages = document.querySelector("#messages");
 const replyStatus = document.querySelector("#reply-status");
 const suggestions = document.querySelectorAll("[data-prompt]");
 
+let pendingReply = null;
+let loading = true;
+let generation = 0;
+
 async function showDeploymentInfo() {
   try {
     const response = await fetch("./deployment.json", { cache: "no-store" });
@@ -29,77 +33,95 @@ async function showDeploymentInfo() {
   }
 }
 
-showDeploymentInfo();
-
-let pendingReply = null;
-
-const demoReplies = [
-  {
-    matches: /\b(snow|conditions?|weather|forecast|grooming|lifts?|trails?)\b/i,
-    text: "Let's separate the weather from what's happening on the hill.\n\nWeather observations and forecasts describe the atmosphere. Resort reports describe snow surfaces, grooming, and open lifts and trails. A snowy forecast isn't confirmation of fresh snow on a run.\n\nIn a connected experience, each report would need its source, observation time, and freshness. Live data is unavailable in this demo, so I can't tell you what's open or how the snow is right now.",
-  },
-  {
-    matches: /\b(locations?|near|nearby|close|closer|drive|driving|region|town|city)\b/i,
-    text: "Let's start with where in Michigan you'd like to ski.\n\nA useful search would consider your starting town, how far you'd like to travel, and the kind of terrain you're looking for. Try asking about a region or adding those preferences to your next message.\n\nThis is a scripted preview, not a location search. I haven't checked a map, travel times, or resort availability.",
-  },
-  {
-    matches: /\b(michigan|resorts?|ski|skiing|hills?|beginner|terrain)\b/i,
-    text: "Let's find your kind of Michigan ski day.\n\nA resort comparison could start with your preferred region, experience level, and the terrain you enjoy. Then you'd check resort-reported trail and lift status separately from the weather forecast.\n\nThis demo doesn't have a resort directory or live reports connected. I can't recommend a specific resort based on current conditions, but you can try the snow or location prompts to explore the chat experience.",
-  },
-];
-
 function updateSendState() {
-  sendButton.disabled = pendingReply !== null || input.value.trim().length === 0;
+  sendButton.disabled = loading || pendingReply !== null || input.value.trim().length === 0;
+  suggestions.forEach((button) => { button.disabled = loading || pendingReply !== null; });
+  resetButton.disabled = loading;
 }
 
 function appendMessage(role, text) {
   const article = document.createElement("article");
   article.className = `message message-${role}`;
-
   const label = document.createElement("h2");
   label.className = "message-label";
-  label.textContent = role === "user" ? "You" : "Ski School / Scripted demo";
-
+  label.textContent = role === "user" ? "You" : "Ski School";
   const body = document.createElement("p");
   body.className = "message-body";
   body.textContent = text;
-
   article.append(label, body);
   messages.append(article);
 }
 
-function submitMessage(text) {
-  const message = text.trim();
-  if (!message || pendingReply !== null) return;
+async function api(path, options = {}) {
+  const result = await fetch(path, { ...options, cache: "no-store" });
+  const data = await result.json();
+  if (!result.ok) throw new Error(typeof data.error === "string" ? data.error : "The service is unavailable.");
+  return data;
+}
 
+async function loadHistory() {
+  replyStatus.textContent = "Loading your chat...";
+  try {
+    const data = await api("/api/conversation");
+    if (!Array.isArray(data.messages)) throw new Error("Conversation history is unavailable.");
+    for (const message of data.messages) {
+      if (!["user", "assistant"].includes(message.role) || typeof message.text !== "string") {
+        throw new Error("Conversation history is unavailable.");
+      }
+      appendMessage(message.role, message.text);
+    }
+    welcome.hidden = data.messages.length > 0;
+    conversation.hidden = data.messages.length === 0;
+    replyStatus.textContent = "";
+    loading = false;
+  } catch (error) {
+    messages.replaceChildren();
+    replyStatus.textContent = `${error.message} Reload the page or start a new chat.`;
+    resetButton.disabled = false;
+    return;
+  }
+  updateSendState();
+}
+
+async function submitMessage(text) {
+  const message = text.trim();
+  if (!message || loading || pendingReply !== null) return;
+  const currentGeneration = generation;
+  let finishReply;
+  pendingReply = new Promise((resolve) => { finishReply = resolve; });
   welcome.hidden = true;
   conversation.hidden = false;
   appendMessage("user", message);
   input.value = "";
-  replyStatus.textContent = "Ski School is typing a scripted demo reply...";
-  suggestions.forEach((button) => { button.disabled = true; });
-
-  pendingReply = window.setTimeout(() => {
-    const nearBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 120;
-    const reply = demoReplies.find((candidate) => candidate.matches.test(message));
-    appendMessage("assistant", reply?.text ?? "This preview uses a few scripted replies about Michigan skiing, not an AI model. I can't answer that request here.\n\nTry asking about Michigan resorts, snow conditions, or skiing locations. No live data is connected.");
-    pendingReply = null;
-    replyStatus.textContent = "";
-    suggestions.forEach((button) => { button.disabled = false; });
-    updateSendState();
-    if (nearBottom) form.scrollIntoView({ block: "nearest" });
-  }, 900);
-
+  replyStatus.textContent = "Ski School is thinking...";
   updateSendState();
-  input.focus({ preventScroll: true });
   form.scrollIntoView({ block: "nearest" });
+  try {
+    const data = await api("/api/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    if (typeof data.reply !== "string" || !data.reply) throw new Error("The assistant returned an empty reply.");
+    if (currentGeneration !== generation) return;
+    appendMessage("assistant", data.reply);
+    replyStatus.textContent = "";
+  } catch (error) {
+    if (currentGeneration !== generation) return;
+    replyStatus.textContent = `${error.message} The message may have been received; reload to check.`;
+  } finally {
+    finishReply();
+    if (currentGeneration === generation) {
+      pendingReply = null;
+      updateSendState();
+    }
+  }
 }
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   submitMessage(input.value);
 });
-
 input.addEventListener("input", updateSendState);
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
@@ -107,21 +129,39 @@ input.addEventListener("keydown", (event) => {
     if (!sendButton.disabled) form.requestSubmit();
   }
 });
-
 suggestions.forEach((button) => {
   button.addEventListener("click", () => submitMessage(button.dataset.prompt));
 });
-
-resetButton.addEventListener("click", () => {
-  window.clearTimeout(pendingReply);
-  pendingReply = null;
-  messages.replaceChildren();
-  welcome.hidden = false;
-  conversation.hidden = true;
-  input.value = "";
-  replyStatus.textContent = "New chat started.";
-  suggestions.forEach((button) => { button.disabled = false; });
+resetButton.addEventListener("click", async () => {
+  const historyWasUnavailable = loading;
+  const previousReply = pendingReply;
+  generation += 1;
+  loading = true;
   updateSendState();
-  input.focus({ preventScroll: true });
-  welcome.scrollIntoView({ block: "start" });
+  replyStatus.textContent = previousReply
+    ? "Waiting for the current reply before deleting your chat..."
+    : "Deleting your previous chat...";
+  try {
+    await previousReply;
+    pendingReply = null;
+    replyStatus.textContent = "Deleting your previous chat...";
+    await api("/api/reset", { method: "POST" });
+    messages.replaceChildren();
+    welcome.hidden = false;
+    conversation.hidden = true;
+    input.value = "";
+    replyStatus.textContent = "New chat started.";
+    input.focus({ preventScroll: true });
+    welcome.scrollIntoView({ block: "start" });
+    loading = false;
+  } catch (error) {
+    replyStatus.textContent = error.message;
+    loading = historyWasUnavailable;
+  }
+  updateSendState();
+  if (historyWasUnavailable && loading) resetButton.disabled = false;
 });
+
+showDeploymentInfo();
+updateSendState();
+loadHistory();

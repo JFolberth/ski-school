@@ -1,8 +1,7 @@
 # Copy to an ignored root-local dev.tfvar and select explicitly with -var-file=dev.tfvar.
 # Supply subscription_id, tenant_id, workspace_id, model_capacity and model_version.
 # Candidate model version: 2026-03-17; target support/quota remain unverified.
-account_sku_name          = "S0"
-agent_deployer_principals = {}
+account_sku_name = "S0"
 application_insights = {
   application_type    = "web"
   retention_in_days   = 30

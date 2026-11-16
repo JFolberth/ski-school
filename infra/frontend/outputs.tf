@@ -17,3 +17,8 @@ output "resource_group_id" {
   description = "Resource ID of the frontend-only resource group."
   value       = azapi_resource.frontend_resource_group.id
 }
+
+output "runtime_principal_id" {
+  description = "System-assigned Container App runtime principal, separate from the ACR image-pull identity."
+  value       = module.aca.runtime_principal_id
+}

@@ -13,6 +13,11 @@ locals {
   )
   acr_subscription_scope = join("/", slice(split("/", var.acr_resource_id), 0, 3))
 
+  image_repositories = sort(distinct([
+    var.container_image_repository,
+    var.bridge_image_repository,
+  ]))
+
   tags = merge(var.tags, {
     environment = var.environment_name
     managed_by  = "terraform"
@@ -94,8 +99,13 @@ resource "azapi_resource" "acr_pull_role_assignment" {
         roleDefinitionId = local.acr_role_definition_guid == null ? "" : "${local.acr_subscription_scope}/providers/Microsoft.Authorization/roleDefinitions/${local.acr_role_definition_guid}"
       },
       local.acr_role_assignment_mode == "AbacRepositoryPermissions" ? {
-        # Restrict the ABAC repository-reader grant to this one image repository.
-        condition        = "@Resource[Microsoft.ContainerRegistry/registries/repositories:RepositoryName] StringEqualsIgnoreCase '${var.container_image_repository}'"
+        # Exact repository matches only; no wildcard, catalog-listing grant,
+        # or registry-wide fallback. Request attribute contract:
+        # https://learn.microsoft.com/azure/container-registry/container-registry-rbac-abac-repository-permissions
+        condition = "(${join(" OR ", [
+          for repository in local.image_repositories :
+          "@Request[Microsoft.ContainerRegistry/registries/repositories:name] StringEqualsIgnoreCase '${repository}'"
+        ])})"
         conditionVersion = "2.0"
       } : {}
     )
@@ -110,19 +120,45 @@ resource "azapi_resource" "acr_pull_role_assignment" {
 }
 
 resource "azapi_resource" "container_app" {
-  type      = "Microsoft.App/containerApps@2025-07-01"
+  # Newest containerApps API covered by AzAPI 2.13.0's embedded schema.
+  # Newer 2026-07-01 is published but not embedded; no schema exception.
+  type      = "Microsoft.App/containerApps@2026-01-01"
   name      = "${local.base_name}-ui"
   parent_id = var.resource_group_id
   location  = var.location
   tags      = local.tags
 
+  # Azure normalizes ingress transport casing; this affects all body strings.
+  ignore_casing = true
+
   response_export_values = [
+    "identity.principalId",
     "properties.configuration.ingress.fqdn",
   ]
 
+  # Keep the entire array here, never in body or response exports. AzAPI 2.13
+  # merges named arrays by name; owning it in one place avoids partial-array
+  # merges. This module owns the complete ACA secret array.
+  # Intentionally omit sensitive_body_version: unchanged versions
+  # omit fields from PUT. Instead, supply the key on every actual update;
+  # AzAPI stores only a SHA-256 change-detection hash in private state.
+  # https://registry.terraform.io/providers/Azure/azapi/2.13.0/docs/guides/feature_ephemeral_resource
+  sensitive_body = {
+    properties = {
+      configuration = {
+        secrets = [
+          {
+            name  = "session-signing-key"
+            value = var.session_signing_key
+          }
+        ]
+      }
+    }
+  }
+
   body = {
     identity = {
-      type = "UserAssigned"
+      type = "SystemAssigned, UserAssigned"
       userAssignedIdentities = {
         (azapi_resource.image_pull_identity.id) = {}
       }
@@ -130,6 +166,15 @@ resource "azapi_resource" "container_app" {
     properties = {
       configuration = {
         activeRevisionsMode = "Single"
+        identitySettings = [
+          {
+            # ACR pulls retain their existing pre-authorized identity, but
+            # application code cannot acquire tokens for that identity.
+            # Container Apps returns this resource ID segment in lowercase.
+            identity  = replace(azapi_resource.image_pull_identity.id, "resourceGroups", "resourcegroups")
+            lifecycle = "None"
+          }
+        ]
         ingress = {
           allowInsecure = false
           external      = true
@@ -172,7 +217,7 @@ resource "azapi_resource" "container_app" {
                 periodSeconds       = 10
                 successThreshold    = 1
                 timeoutSeconds      = 2
-                type                = "Startup"
+                type                = "Liveness"
                 httpGet = {
                   path   = "/healthz"
                   port   = 8080
@@ -210,6 +255,36 @@ resource "azapi_resource" "container_app" {
               cpu    = var.container_cpu
               memory = var.container_memory
             }
+          },
+          {
+            image = "${data.azapi_resource.acr.output.properties.loginServer}/${var.bridge_image_repository}@${var.bridge_image_digest}"
+            name  = "bridge"
+            env = [
+              {
+                name  = "BRIDGE_AUTH_MODE"
+                value = "managed_identity"
+              },
+              {
+                name  = "FOUNDRY_AGENT_BASE_URL"
+                value = trimsuffix(var.foundry_agent_base_url, "/")
+              },
+              {
+                name      = "SESSION_SIGNING_KEY"
+                secretRef = "session-signing-key"
+              },
+              {
+                # Secret changes alone do not restart ACA revisions.
+                # Change this non-secret identifier alongside every rotation.
+                name  = "SESSION_SIGNING_KEY_VERSION"
+                value = var.session_signing_key_version
+              }
+            ]
+            # The image binds 127.0.0.1:8089 for Nginx in the same replica.
+            # No external port mapping or platform probe to its loopback port.
+            resources = {
+              cpu    = var.bridge_cpu
+              memory = var.bridge_memory
+            }
           }
         ]
         scale = {
@@ -245,6 +320,38 @@ resource "azapi_resource" "container_app" {
     precondition {
       condition     = try(tonumber(trimsuffix(var.container_memory, "Gi")) == var.container_cpu * 2, false)
       error_message = "Consumption memory must be twice the CPU allocation in Gi, for example 0.25 CPU and 0.5Gi memory."
+    }
+
+    precondition {
+      # The existing environment has no workload profiles (Consumption-only).
+      # https://learn.microsoft.com/azure/container-apps/containers#vcpu-and-memory-allocation-requirements
+      condition     = try(tonumber(trimsuffix(var.bridge_memory, "Gi")) == var.bridge_cpu * 2, false) && var.container_cpu + var.bridge_cpu <= 2
+      error_message = "Bridge Consumption memory must be twice its CPU allocation in Gi; total replica CPU across frontend and bridge must not exceed 2 cores in this Consumption-only environment."
+    }
+
+    precondition {
+      condition = try(endswith(
+        trimsuffix(var.foundry_agent_base_url, "/"),
+        "/api/projects/${split("/", var.foundry_agent_resource_id)[10]}/agents/${split("/", var.foundry_agent_resource_id)[12]}/endpoint/protocols/openai"
+      ), false)
+      error_message = "The endpoint project and agent names must match the configured agent RBAC scope."
+    }
+  }
+}
+
+resource "azapi_resource" "foundry_agent_consumer" {
+  type      = "Microsoft.Authorization/roleAssignments@2022-04-01"
+  name      = uuidv5("dns", "${var.foundry_agent_resource_id}/${azapi_resource.container_app.output.identity.principalId}/agent-consumer")
+  parent_id = var.foundry_agent_resource_id
+
+  # Agent-scope assignments are evaluated for this agent's endpoint only.
+  # https://learn.microsoft.com/azure/foundry/concepts/rbac-foundry#agent-scope-role-assignments
+  body = {
+    properties = {
+      principalId   = azapi_resource.container_app.output.identity.principalId
+      principalType = "ServicePrincipal"
+      # Foundry Agent Consumer
+      roleDefinitionId = "${join("/", slice(split("/", var.foundry_agent_resource_id), 0, 3))}/providers/Microsoft.Authorization/roleDefinitions/eed3b665-ab3a-47b6-8f48-c9382fb1dad6"
     }
   }
 }

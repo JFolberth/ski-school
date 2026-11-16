@@ -22,16 +22,6 @@ module "project" {
   name         = "proj-${local.suffix}"
 }
 
-module "agent_deployer" {
-  for_each       = var.agent_deployer_principals
-  source         = "../modules/role-assignment"
-  principal_id   = each.value
-  principal_type = "User"
-  # Foundry User permits agent read and write at the project scope.
-  role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/53ca6127-db72-4b80-b1b0-d745d6d5456d"
-  scope_id           = module.project.id
-}
-
 module "model" {
   source                 = "../modules/model-deployment"
   account_id             = module.account.id

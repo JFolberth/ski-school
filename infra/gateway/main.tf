@@ -35,7 +35,7 @@ module "model_provider" {
   source       = "../modules/ai-gateway-model-provider"
   account_id   = each.value.account_id
   endpoint     = each.value.endpoint == null ? var.model_backend_endpoint : each.value.endpoint
-  name         = "foundry-${local.suffix}"
+  name         = each.value.provider_name
   workspace_id = local.default_workspace_id
 }
 
@@ -44,17 +44,18 @@ module "model" {
   source              = "../modules/ai-gateway-model"
   deployment_id       = each.value.deployment_id
   model_version       = each.value.model_version
-  name                = "model-${local.suffix}"
+  name                = each.value.model_name
   provider_id         = module.model_provider[each.key].id
   supported_endpoints = each.value.supported_endpoints
 }
 
 module "model_alias" {
-  for_each     = local.model_backends
-  source       = "../modules/ai-gateway-model-alias"
-  model_id     = module.model[each.key].id
-  name         = "model-${local.suffix}"
-  workspace_id = local.default_workspace_id
+  for_each      = local.model_backends
+  source        = "../modules/ai-gateway-model-alias"
+  model_id      = module.model[each.key].id
+  name          = each.value.alias_name
+  policy_limits = var.alias_policy_limits
+  workspace_id  = local.default_workspace_id
 }
 
 module "model_caller" {

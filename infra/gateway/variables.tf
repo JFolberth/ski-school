@@ -1,3 +1,18 @@
+variable "alias_policy_limits" {
+  type = object({
+    requests_per_minute = optional(number, 30)
+    tokens_per_minute   = optional(number, 30000)
+    monthly_cost_usd    = optional(number, 10)
+  })
+  description = "Per-identity alias limits; the monthly USD allowance is estimated, not a billing cap."
+  default     = {}
+  nullable    = false
+  validation {
+    condition     = var.alias_policy_limits.requests_per_minute > 0 && var.alias_policy_limits.requests_per_minute <= 2147483647 && floor(var.alias_policy_limits.requests_per_minute) == var.alias_policy_limits.requests_per_minute && var.alias_policy_limits.tokens_per_minute > 0 && var.alias_policy_limits.tokens_per_minute <= 2147483647 && floor(var.alias_policy_limits.tokens_per_minute) == var.alias_policy_limits.tokens_per_minute && var.alias_policy_limits.monthly_cost_usd > 0
+    error_message = "Request and token limits must be positive 32-bit integers; the estimated cost limit must be positive."
+  }
+}
+
 variable "application_insights" {
   type = object({
     application_type    = optional(string, "web")
@@ -64,9 +79,12 @@ variable "model_backend" {
     deployment_id       = string
     endpoint            = optional(string)
     model_version       = string
+    provider_name       = string
+    model_name          = string
+    alias_name          = string
     supported_endpoints = optional(set(string), ["/openai/v1/responses"])
   })
-  description = "Staged Foundry gateway_backend output handoff. Null creates gateway identity first; populate after the Foundry root grants that principal upstream inference access. This enables one provider/model/alias without a direct project bypass."
+  description = "Staged Foundry gateway_backend output handoff and explicit provider, model, and alias names. Null creates gateway identity first; populate after the Foundry root grants that principal upstream inference access."
   default     = null
   validation {
     condition     = var.model_backend == null ? true : startswith(lower(var.model_backend.deployment_id), "${lower(var.model_backend.account_id)}/deployments/")
@@ -75,6 +93,14 @@ variable "model_backend" {
   validation {
     condition     = var.model_backend == null ? var.model_backend_endpoint == null : (var.model_backend.endpoint == null) != (var.model_backend_endpoint == null)
     error_message = "For a configured backend supply exactly one actual endpoint, either in model_backend or via the sensitive model_backend_endpoint input."
+  }
+  validation {
+    condition = var.model_backend == null ? true : (
+      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.model_backend.provider_name)) &&
+      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.model_backend.model_name)) &&
+      can(regex("^[a-zA-Z0-9_.-]+$", var.model_backend.alias_name))
+    )
+    error_message = "Provide valid provider, gateway model, and alias names for the configured backend."
   }
 }
 
