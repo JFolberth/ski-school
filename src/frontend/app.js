@@ -39,15 +39,74 @@ function updateSendState() {
   resetButton.disabled = loading;
 }
 
+function appendFormattedText(element, text) {
+  const boldPattern = /\*\*([^\n]+?)\*\*/g;
+  let offset = 0;
+  for (const match of text.matchAll(boldPattern)) {
+    element.append(document.createTextNode(text.slice(offset, match.index)));
+    const strong = document.createElement("strong");
+    strong.textContent = match[1];
+    element.append(strong);
+    offset = match.index + match[0].length;
+  }
+  element.append(document.createTextNode(text.slice(offset)));
+}
+
+function renderAssistantMessage(body, text) {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  let paragraph = [];
+  let list = null;
+
+  function flushParagraph() {
+    if (paragraph.length === 0) return;
+    const element = document.createElement("p");
+    appendFormattedText(element, paragraph.join("\n"));
+    body.append(element);
+    paragraph = [];
+  }
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      flushParagraph();
+      list = null;
+      continue;
+    }
+
+    const item = line.match(/^\s{0,3}(?:[-+*]|\d+[.)])\s+(.+)$/);
+    if (item) {
+      flushParagraph();
+      const number = line.match(/^\s{0,3}(\d+)[.)]\s+/);
+      const tag = number ? "ol" : "ul";
+      if (!list || list.localName !== tag) {
+        list = document.createElement(tag);
+        if (number) list.setAttribute("start", number[1]);
+        body.append(list);
+      }
+      const element = document.createElement("li");
+      appendFormattedText(element, item[1]);
+      list.append(element);
+      continue;
+    }
+
+    list = null;
+    paragraph.push(line);
+  }
+  flushParagraph();
+}
+
 function appendMessage(role, text) {
   const article = document.createElement("article");
   article.className = `message message-${role}`;
   const label = document.createElement("h2");
   label.className = "message-label";
   label.textContent = role === "user" ? "You" : "Ski School";
-  const body = document.createElement("p");
+  const body = document.createElement(role === "assistant" ? "div" : "p");
   body.className = "message-body";
-  body.textContent = text;
+  if (role === "assistant") {
+    renderAssistantMessage(body, text);
+  } else {
+    body.textContent = text;
+  }
   article.append(label, body);
   messages.append(article);
 }
