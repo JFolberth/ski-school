@@ -1,9 +1,3 @@
-variable "application_insights_id" {
-  type        = string
-  description = "Dedicated gateway Application Insights component ARM ID."
-  nullable    = false
-}
-
 variable "endpoints" {
   type = object({
     logs    = string

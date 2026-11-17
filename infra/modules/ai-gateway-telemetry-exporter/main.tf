@@ -1,22 +1,44 @@
 resource "azapi_resource" "this" {
-  type      = "Microsoft.ApiManagement/aigateways/workspaces/telemetryExporters@2025-09-01-preview"
+  type      = "Microsoft.ApiManagement/aigateways/workspaces/telemetryExporters@2026-11-01"
   name      = var.name
   parent_id = var.workspace_id
-  # Approved per-resource contract exception; AzAPI's embedded schema lacks this child type.
-  # https://github.com/Azure-Samples/ai-gateway-foundry-terraform/blob/main/standalone/ai_gateway.tf
+  # Per-resource schema-validation exception; Azure validates against the documented API contract.
+  # https://learn.microsoft.com/en-us/rest/api/aigateway/ai-gateway-telemetry-exporter-resources/create-or-update?view=rest-aigateway-2026-11-01
   schema_validation_enabled = false
   body = {
     properties = {
-      kind           = "OpenTelemetry"
-      payloadCapture = false
-      applicationInsights = {
-        resourceId = var.application_insights_id
+      telemetryExporterType = "OpenTelemetry"
+      payloadCapture        = false
+      authentication = {
+        managedIdentity = {
+          resource = "https://monitor.azure.com/"
+        }
       }
-      openTelemetry = {
-        credentials = {
-          managedIdentity = {
-            resource = "https://monitor.azure.com"
+      telemetry = {
+        attributes = [
+          {
+            source = {
+              kind  = "claims"
+              value = "oid"
+            }
+            signals = ["logs", "traces", "metrics"]
           }
+        ]
+      }
+    }
+  }
+  # Keep destination URLs in the sensitive body and export no API response fields.
+  sensitive_body = {
+    properties = {
+      openTelemetry = {
+        metricsEndpoint = {
+          url = var.endpoints.metrics
+        }
+        logsEndpoint = {
+          url = var.endpoints.logs
+        }
+        tracesEndpoint = {
+          url = var.endpoints.traces
         }
       }
     }
@@ -24,15 +46,5 @@ resource "azapi_resource" "this" {
   # Without a version map AzAPI tracks a private hash and sends all write-only
   # fields on each create/update, including updates to unrelated body fields.
   # https://github.com/Azure/terraform-provider-azapi/blob/v2.13.0/docs/guides/feature_ephemeral_resource.md
-  sensitive_body = {
-    properties = {
-      openTelemetry = {
-        metricsEndpoint = var.endpoints.metrics
-        logsEndpoint    = var.endpoints.logs
-        tracesEndpoint  = var.endpoints.traces
-      }
-    }
-  }
-  # Azure may echo endpoints in GET responses; never store them as raw output.
   response_export_values = []
 }

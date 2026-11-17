@@ -1,8 +1,8 @@
-# Non-secret existing-backend coordinates only. No live initialization approved.
+# Non-secret existing-backend coordinates; authenticate with Azure AD separately.
 # Supply backend tenant_id and approved identity authentication separately.
-# Verify this key is available and belongs to gateway/dev before initialization.
+# Keep the gateway's dev state isolated under this root-specific key.
 container_name       = "tfstate"
-key                  = "gateway-dev.tfstate"
+key                  = "ski-school-gateway.tfstate"
 resource_group_name  = "rg-terraformstate-dev-swece"
 storage_account_name = "saterraformstatedevswece"
 subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"

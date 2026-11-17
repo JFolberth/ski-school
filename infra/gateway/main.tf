@@ -85,12 +85,11 @@ module "telemetry_publisher" {
 }
 
 module "telemetry_exporter" {
-  for_each                = local.telemetry_exporters
-  source                  = "../modules/ai-gateway-telemetry-exporter"
-  application_insights_id = module.application_insights[0].id
-  endpoints               = var.telemetry_exporter.endpoints
-  name                    = "otlp-${local.suffix}"
-  workspace_id            = local.default_workspace_id
+  for_each     = local.telemetry_exporters
+  source       = "../modules/ai-gateway-telemetry-exporter"
+  endpoints    = var.telemetry_exporter.endpoints
+  name         = "otlp-${local.suffix}"
+  workspace_id = local.default_workspace_id
   # Registration requires DCR publish authorization, which is not an exporter property.
   depends_on = [module.telemetry_publisher]
 }
