@@ -1,0 +1,39 @@
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - src/frontend/**
+      - infra/frontend/**
+      - infra/modules/**
+  push:
+    branches: [main]
+    paths:
+      - src/frontend/**
+      - infra/frontend/**
+      - infra/modules/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Path-filtered workflows must not be unconditional required checks for all PRs.
+jobs:
+  images:
+    name: Frontend images
+    uses: ./.github/workflows/reusable-frontend-build.yml
+
+  terraform:
+    name: Frontend Terraform
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-plan.yml
+    with:
+      state-key: ski-school-frontend.tfstate
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

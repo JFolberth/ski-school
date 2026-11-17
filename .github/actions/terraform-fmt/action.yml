@@ -1,0 +1,27 @@
+name: Check Terraform formatting
+description: Validate source paths and check formatting before initialization or planning.
+inputs:
+  terraform-root:
+    description: Repository-relative Terraform root.
+    default: infra/frontend
+  module-path:
+    description: Repository-relative local module.
+    default: infra/modules/aca
+runs:
+  using: composite
+  steps:
+    - name: Check source paths and formatting
+      shell: bash
+      env:
+        TF_ROOT: ${{ inputs.terraform-root }}
+        TF_MODULE: ${{ inputs.module-path }}
+      run: |
+        workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
+        for path in "$TF_ROOT" "$TF_MODULE"; do
+          resolved=$(realpath -e -- "$path")
+          if [[ "$path" == /* || "$resolved" != "$workspace/$path" ]]; then
+            echo "::error::Terraform paths must be canonical repository-relative paths without symlinks."
+            exit 1
+          fi
+        done
+        terraform fmt -check "$TF_ROOT" "$TF_MODULE"

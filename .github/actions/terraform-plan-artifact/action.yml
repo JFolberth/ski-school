@@ -1,0 +1,99 @@
+name: Check Terraform plan
+description: Check an approved target against existing remote state without publishing private outputs.
+inputs:
+  terraform-root:
+    description: Repository-relative Terraform root.
+    default: infra/frontend
+  environment:
+    description: Environment name; selects the matching tfvars file in the Terraform root.
+    default: dev
+runs:
+  using: composite
+  steps:
+    - name: Require configuration and prepare private directory
+      id: private
+      shell: bash
+      env:
+        TF_ROOT: ${{ inputs.terraform-root }}
+        TFVARS: ${{ inputs.environment }}.tfvars
+      run: |
+        for name in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID STATE_ACCOUNT \
+          STATE_CONTAINER STATE_KEY TF_VAR_session_signing_key; do
+          if [[ -z "$(printenv "$name")" ]]; then
+            echo "::error::Missing required plan configuration: $name"
+            exit 1
+          fi
+        done
+        workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
+        for path in "$TF_ROOT" "$TF_ROOT/$TFVARS"; do
+          resolved=$(realpath -e -- "$path")
+          if [[ "$path" == /* || "$resolved" != "$workspace/$path" ]]; then
+            echo "::error::Terraform plan paths must be canonical repository-relative paths without symlinks."
+            exit 1
+          fi
+        done
+        umask 077
+        directory=$(mktemp -d "$(realpath -e -- "$RUNNER_TEMP")/frontend-plan.XXXXXX")
+        trap 'rm -rf -- "$directory"' ERR
+        echo "directory=$directory" >> "$GITHUB_OUTPUT"
+
+    - name: Initialize existing remote state
+      shell: bash
+      env:
+        TF_ROOT: ${{ inputs.terraform-root }}
+        DIRECTORY: ${{ steps.private.outputs.directory }}
+        TF_DATA_DIR: ${{ steps.private.outputs.directory }}/data
+      run: |
+        umask 077
+        if ! exists=$(az storage blob exists --auth-mode login --account-name "$STATE_ACCOUNT" \
+          --container-name "$STATE_CONTAINER" --name "$STATE_KEY" \
+          --query exists --output tsv 2> "$DIRECTORY/init.log") || [[ "$exists" != true ]]; then
+          echo "::error::Existing remote state and authorized identity access are required. CI cannot bootstrap."
+          exit 1
+        fi
+        if ! terraform -chdir="$TF_ROOT" init -lockfile=readonly -no-color \
+          -backend-config="storage_account_name=$STATE_ACCOUNT" \
+          -backend-config="container_name=$STATE_CONTAINER" \
+          -backend-config="key=$STATE_KEY" > "$DIRECTORY/init.log" 2>&1; then
+          echo "::error::Remote initialization failed. Check OIDC, approved backend inputs, and the committed lockfile."
+          exit 1
+        fi
+
+    - name: Check plan and approved target
+      shell: bash
+      env:
+        TF_ROOT: ${{ inputs.terraform-root }}
+        TFVARS: ${{ inputs.environment }}.tfvars
+        TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        DIRECTORY: ${{ steps.private.outputs.directory }}
+        TF_DATA_DIR: ${{ steps.private.outputs.directory }}/data
+      run: |
+        set -euo pipefail
+        umask 077
+        if ! terraform -chdir="$TF_ROOT" plan -var-file="$TFVARS" \
+          -lock-timeout=60s -no-color -out="$DIRECTORY/frontend.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
+          echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
+          exit 1
+        fi
+        if ! {
+          terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/frontend.tfplan" |
+          jq -e '.errored != true and
+            .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
+            .variables.environment.value == env.TARGET_ENVIRONMENT'
+        } > /dev/null 2> "$DIRECTORY/plan.log"; then
+          echo "::error::Cannot verify the plan matches the approved target. Raw diagnostics are withheld."
+          exit 1
+        fi
+
+    - name: Remove private Terraform files
+      if: ${{ always() && steps.private.outputs.directory != '' }}
+      shell: bash
+      env:
+        DIRECTORY: ${{ steps.private.outputs.directory }}
+      run: |
+        if [[ -L "$DIRECTORY" || "${DIRECTORY##*/}" != frontend-plan.* ||
+          "$(dirname -- "$DIRECTORY")" != "$(realpath -e -- "$RUNNER_TEMP")" ]]; then
+          echo "::error::Refusing cleanup outside the owned private directory."
+          exit 1
+        fi
+        rm -rf -- "$DIRECTORY"

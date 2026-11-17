@@ -1,3 +1,8 @@
+locals {
+  foundry_agent_resource_id_parts = split("/", var.foundry_agent_resource_id)
+  foundry_agent_base_url          = "https://${lower(local.foundry_agent_resource_id_parts[8])}.services.ai.azure.com/api/projects/${local.foundry_agent_resource_id_parts[10]}/agents/${local.foundry_agent_resource_id_parts[12]}/endpoint/protocols/openai"
+}
+
 resource "azapi_resource" "frontend_resource_group" {
   type      = "Microsoft.Resources/resourceGroups@2021-04-01"
   name      = var.resource_group_name
@@ -23,7 +28,7 @@ module "aca" {
   deployment_timestamp           = var.deployment_timestamp
   diagnostic_disabled_categories = var.diagnostic_disabled_categories
   environment_name               = var.environment
-  foundry_agent_base_url         = var.foundry_agent_base_url
+  foundry_agent_base_url         = local.foundry_agent_base_url
   foundry_agent_resource_id      = var.foundry_agent_resource_id
   http_concurrent_requests       = var.http_concurrent_requests
   location                       = var.location

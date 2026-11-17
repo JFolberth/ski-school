@@ -1,0 +1,35 @@
+name: Upload CI artifact
+description: Upload required artifact files with shared retention and compression defaults.
+inputs:
+  name:
+    description: Artifact name.
+    required: true
+  path:
+    description: File paths or patterns to upload, one per line.
+    required: true
+  retention-days:
+    description: Artifact retention in days.
+    default: "7"
+  compression-level:
+    description: Compression level from 0 to 9; use 0 for image archives.
+    default: "6"
+  include-hidden-files:
+    description: Include hidden files only when explicitly selected and safe to upload.
+    default: "false"
+outputs:
+  artifact-id:
+    description: Uploaded artifact ID.
+    value: ${{ steps.upload.outputs.artifact-id }}
+runs:
+  using: composite
+  steps:
+    - name: Upload artifact
+      id: upload
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        retention-days: ${{ inputs.retention-days }}
+        compression-level: ${{ inputs.compression-level }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}
+        if-no-files-found: error
