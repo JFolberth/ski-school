@@ -29,7 +29,6 @@ jobs:
 
   checks:
     name: Gateway Terraform checks
-    needs: modules
     permissions:
       contents: read
       id-token: write
