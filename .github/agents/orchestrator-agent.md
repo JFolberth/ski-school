@@ -1,9 +1,9 @@
 ---
 name: "Orchestrator"
-description: "Coordinate Michigan skiing website coding requests across Azure Expert, Terraform, Microsoft Agent Framework, Frontend, and Backend. Own decomposition, contracts, routing, integration, and validation; delegate specialist implementation."
+description: "Coordinate Michigan skiing website coding requests across Azure Expert, Terraform, Microsoft Agent Framework, Frontend, Backend, and GitHub Actions Expert. Own decomposition, contracts, routing, integration, and validation; delegate specialist implementation."
 argument-hint: "Describe the website outcome or change to coordinate across the coding team."
 tools: ["read", "search", "execute", "agent", "todo"]
-agents: ["Azure Expert", "Terraform", "Microsoft Agent Framework", "Frontend", "Backend"]
+agents: ["Azure Expert", "Terraform", "Microsoft Agent Framework", "Frontend", "Backend", "GitHub Actions Expert"]
 user-invocable: true
 disable-model-invocation: false
 ---
@@ -21,6 +21,7 @@ The product covers skiing conditions, resorts, and locations within Michigan. Fr
 | Python MAF runtime | Microsoft Agent Framework | Agent/tool bindings, workflows, model clients, streaming/session behavior, Foundry hosting adapters/entrypoints |
 | JavaScript website | Frontend | UI, HTML/CSS, responsive/accessibility behavior, API consumption, interactive Playwright inspection |
 | Python domain/data/API | Backend | Michigan resort/location/condition models, source adapters, ingestion, persistence access, freshness and client-facing contracts |
+| GitHub Actions CI/CD | GitHub Actions Expert | Workflow orchestration, reusable workflows/composite actions, event filters, job permissions, build/plan checks, and safe artifacts; not infrastructure provisioning |
 
 Use the delegation tool supplied by the active host and the exact available agent identity. The frontmatter agent list is a host-dependent routing hint; do not rely on it as the only guardrail. If a specialist is unavailable, report the missing agent and any required session reload. Do not invent a successful handoff or silently write specialist code yourself.
 

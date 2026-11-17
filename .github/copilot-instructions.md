@@ -3,7 +3,7 @@
 - Build a Michigan-only skiing website focused on skiing conditions, resorts, and locations. Do not expand product scope without a request.
 - Use JavaScript for the frontend and Python with Microsoft Agent Framework (MAF) for the backend and application agents. Do not substitute TypeScript or another backend language. A JavaScript framework and any separate Python web framework have not been selected.
 - Target Foundry hosted agents for the application's AI runtime, not ACA Sandbox. Frontend hosting and any separate public API service remain undecided; do not assume hosted agents also host the website.
-- The Orchestrator and five specialists in `.github/agents/` are Copilot coding agents, not application-runtime agents.
+- The Orchestrator and specialist profiles in `.github/agents/` are Copilot coding agents, not application-runtime agents.
 
 # Working rules
 
@@ -19,7 +19,7 @@
 
 - Terraform is the source of truth for provisionable infrastructure, including hosting, identities, access, and state storage. Terraform owns `.tf`, `.tf.json`, Terraform variable/backend files, modules, and lockfiles. Other specialists return infrastructure requirements rather than editing those files.
 - Organize Terraform deployment roots by resource-group responsibility, with independent state and variables per resource group. Do not create environment folders or duplicate roots by environment. Pass environment values through explicit `.tfvars` files colocated with each root, with `environment` defaulting to `dev`.
-- Reuse each root across environments while keeping each resource-group/environment combination in a distinct remote state key. Supply backend initialization settings separately; `.tfvars` files do not configure Terraform backends.
+- Reuse each root across environments, isolating environments in separate state storage accounts. Use an environment-neutral, root-specific state key consistently across those accounts. Supply backend initialization settings separately; `.tfvars` files do not configure Terraform backends.
 - Expose supported service SKUs, capacity, retention and other operational configuration through typed Terraform root/module variables and selected `.tfvars` inputs. Use verified appropriate defaults where possible, without weakening security guardrails or expanding resource scope.
 - Use `Azure/azapi` for Azure resources; do not introduce `hashicorp/azurerm`. Terraform's built-in `azurerm` state backend is allowed and is not the AzureRM resource provider.
 - Use the latest stable released AzAPI provider with compatible constraints and a resolved lockfile. Verify the newest applicable supported resource API versions; do not exclude an API solely because its version/name contains `preview`. Preview API permission does not imply general availability, target-region support or permission to bypass schema validation.

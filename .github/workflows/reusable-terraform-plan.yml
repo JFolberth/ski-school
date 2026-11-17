@@ -1,0 +1,141 @@
+name: Reusable frontend Terraform plan
+
+on:
+  workflow_call:
+    inputs:
+      terraform-root:
+        type: string
+        default: infra/frontend
+      module-path:
+        type: string
+        default: infra/modules/aca
+      environments:
+        description: JSON array of objects with name, state_storage_account, and state_container.
+        type: string
+        default: >-
+          [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate"}]
+      state-key:
+        description: Environment-neutral state blob key for this Terraform root.
+        type: string
+        required: true
+      artifact-prefix:
+        type: string
+        default: frontend-ci
+      retention-days:
+        type: number
+        default: 7
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY:
+        description: Existing ephemeral session key; required only for eligible plans.
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  validate:
+    name: Validate and package Terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      plan-eligible: ${{ steps.eligibility.outputs.plan-eligible }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - name: Check Terraform formatting
+        uses: ./.github/actions/terraform-fmt
+        with:
+          terraform-root: ${{ inputs.terraform-root }}
+          module-path: ${{ inputs.module-path }}
+      - name: Validate without backend access
+        env:
+          TF_ROOT: ${{ inputs.terraform-root }}
+          TF_DATA_DIR: ${{ runner.temp }}/terraform-validation
+        run: |
+          terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color
+          terraform -chdir="$TF_ROOT" validate -no-color
+      - name: Publish Terraform source artifact
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ inputs.terraform-root }}/*.tf
+            ${{ inputs.terraform-root }}/.terraform.lock.hcl
+            ${{ inputs.module-path }}/*.tf
+          retention-days: ${{ inputs.retention-days }}
+          include-hidden-files: "true"
+      - name: Report planning eligibility
+        id: eligibility
+        env:
+          ELIGIBLE: >-
+            ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+            (github.event_name == 'pull_request' &&
+            !endsWith(github.actor, '[bot]') &&
+            github.event.pull_request.user.type != 'Bot' &&
+            github.event.pull_request.head.repo.full_name == github.repository) }}
+        run: |
+          echo "plan-eligible=$ELIGIBLE" >> "$GITHUB_OUTPUT"
+          if [[ "$ELIGIBLE" != true ]]; then
+            echo "Terraform plan: not eligible (untrusted event, fork, or bot PR). Only backend-free validation was performed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  plan:
+    name: Plan frontend infrastructure (${{ matrix.environment.name }})
+    needs: validate
+    if: needs.validate.outputs.plan-eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJSON(inputs.environments) }}
+    concurrency:
+      group: frontend-terraform-${{ matrix.environment.name }}-${{ inputs.state-key }}
+      cancel-in-progress: false
+    environment: ${{ matrix.environment.name }}
+    permissions:
+      contents: read
+      id-token: write
+    # Environment/OIDC/backend setup requires separate approval; no reviewer gate.
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_CORE_OUTPUT: none
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+      - name: Check Terraform plan
+        uses: ./.github/actions/terraform-plan-artifact
+        with:
+          terraform-root: ${{ inputs.terraform-root }}
+          environment: ${{ matrix.environment.name }}
+        env:
+          ARM_USE_OIDC: "true"
+          ARM_USE_AZUREAD: "true"
+          ARM_USE_CLI: "false"
+          ARM_SKIP_PROVIDER_REGISTRATION: "true"
+          AZAPI_LOG_SENSITIVE_DATA: "false"
+          STATE_ACCOUNT: ${{ matrix.environment.state_storage_account }}
+          STATE_CONTAINER: ${{ matrix.environment.state_container }}
+          STATE_KEY: ${{ inputs.state-key }}
+          TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

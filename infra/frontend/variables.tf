@@ -125,17 +125,6 @@ variable "environment" {
   }
 }
 
-variable "foundry_agent_base_url" {
-  description = "Existing agent OpenAI protocol base URL, ending in /endpoint/protocols/openai, not /responses. The endpoint must already support Azure RBAC."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^https://[a-z0-9][a-z0-9-]*\\.services\\.ai\\.azure\\.com/api/projects/[A-Za-z0-9._-]+/agents/[A-Za-z0-9._-]+/endpoint/protocols/openai/?$", var.foundry_agent_base_url))
-    error_message = "foundry_agent_base_url must be an Azure public-cloud Foundry agent OpenAI protocol base URL without credentials, query, or fragment."
-  }
-}
-
 variable "foundry_agent_resource_id" {
   description = "Existing agent's ARM scope, ending in /accounts/<account>/projects/<project>/agents/<agent>; only this agent receives a runtime role assignment."
   type        = string

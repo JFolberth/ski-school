@@ -1,0 +1,55 @@
+name: Reusable frontend image build
+
+on:
+  workflow_call:
+    inputs:
+      frontend-context:
+        description: Repository-relative nginx image context.
+        type: string
+        default: src/frontend
+      bridge-context:
+        description: Repository-relative bridge image context.
+        type: string
+        default: src/frontend/bridge
+      artifact-prefix:
+        type: string
+        default: frontend-ci
+      retention-days:
+        type: number
+        default: 7
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: frontend
+            context: ${{ inputs.frontend-context }}
+            build-args: ""
+          - image: bridge
+            context: ${{ inputs.bridge-context }}
+            build-args: |
+              PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
+              PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and publish image artifact
+        uses: ./.github/actions/build-image-artifact
+        with:
+          image-kind: ${{ matrix.image }}
+          context: ${{ matrix.context }}
+          dockerfile: ${{ matrix.context }}/Dockerfile
+          image-tag: ski-school-ci/${{ matrix.image }}:${{ github.sha }}
+          build-args: ${{ matrix.build-args }}
+          artifact-prefix: ${{ inputs.artifact-prefix }}
+          retention-days: ${{ inputs.retention-days }}
