@@ -3,8 +3,8 @@
 acr_resource_id         = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-registry-dev-ncus/providers/Microsoft.ContainerRegistry/registries/crskiregistrydevncus"
 bridge_image_digest     = "sha256:a704d193f71b71fbf6cc96d1aef5fc483b344a60580b82390e159248fcc21aba"
 bridge_image_repository = "ski-school/bridge"
-container_image_digest  = "sha256:ec86b3974e43fc75a1f0d9d8ad3231b9f7ad103bb73263d1ba8d0560e05897ba"
-deployment_timestamp    = "2026-11-16T20:26:42Z"
+container_image_digest  = "sha256:00ae9fd67efad0f2e4702fd96b104a399f7f2011175e0b6683cf007ba0d7fd12"
+deployment_timestamp    = "2026-11-17T02:19:53Z"
 diagnostic_disabled_categories = [
   "ContainerAppHTTPLogs",
   "AppEnvSpringAppConsoleLogs",
