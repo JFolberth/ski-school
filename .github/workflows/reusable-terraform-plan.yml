@@ -38,35 +38,48 @@ env:
 
 jobs:
   validate:
-    name: Validate and package Terraform
+    name: Validate Terraform without Azure access
+    if: >-
+      ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      plan-eligible: ${{ steps.eligibility.outputs.plan-eligible }}
+    permissions:
+      contents: read
+    env:
+      TERRAFORM_ARTIFACT_SUFFIX: validation
     steps:
-      - uses: actions/checkout@v7
+      - &checkout
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: hashicorp/setup-terraform@v4
+      - &setup-terraform
+        uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: 1.15.5
           terraform_wrapper: false
-      - name: Check Terraform formatting
+      - &terraform-format
+        name: Check Terraform formatting
         uses: ./.github/actions/terraform-fmt
         with:
           terraform-root: ${{ inputs.terraform-root }}
           module-path: ${{ inputs.module-path }}
-      - name: Validate without backend access
+      - &terraform-validate
+        name: Validate without backend access
         env:
           TF_ROOT: ${{ inputs.terraform-root }}
           TF_DATA_DIR: ${{ runner.temp }}/terraform-validation
         run: |
           terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color
           terraform -chdir="$TF_ROOT" validate -no-color
-      - name: Publish Terraform source artifact
+      - &terraform-source
+        name: Publish Terraform source artifact
         uses: ./.github/actions/upload-artifact
         with:
-          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ env.TERRAFORM_ARTIFACT_SUFFIX }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ inputs.terraform-root }}/*.tf
             ${{ inputs.terraform-root }}/.terraform.lock.hcl
@@ -74,26 +87,19 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
           include-hidden-files: "true"
       - name: Report planning eligibility
-        id: eligibility
-        env:
-          ELIGIBLE: >-
-            ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-            (github.event_name == 'pull_request' &&
-            !endsWith(github.actor, '[bot]') &&
-            github.event.pull_request.user.type != 'Bot' &&
-            github.event.pull_request.head.repo.full_name == github.repository) }}
         run: |
-          echo "plan-eligible=$ELIGIBLE" >> "$GITHUB_OUTPUT"
-          if [[ "$ELIGIBLE" != true ]]; then
-            echo "Terraform plan: not eligible (untrusted event, fork, or bot PR). Only backend-free validation was performed." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "Terraform plan: not eligible (untrusted event, fork, or bot PR). Only backend-free validation was performed." >> "$GITHUB_STEP_SUMMARY"
 
   plan:
-    name: Plan frontend infrastructure (${{ matrix.environment.name }})
-    needs: validate
-    if: needs.validate.outputs.plan-eligible == 'true'
+    name: Validate and plan frontend infrastructure (${{ matrix.environment.name }})
+    if: >-
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -107,18 +113,17 @@ jobs:
       id-token: write
     # Environment/OIDC/backend setup requires separate approval; no reviewer gate.
     env:
+      TERRAFORM_ARTIFACT_SUFFIX: ${{ matrix.environment.name }}
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       AZURE_CORE_OUTPUT: none
     steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.15.5
-          terraform_wrapper: false
+      - *checkout
+      - *setup-terraform
+      - *terraform-format
+      - *terraform-validate
+      - *terraform-source
       - uses: Azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}

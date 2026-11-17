@@ -26,7 +26,7 @@ no-new-test-cases policies. Agent profiles are operational configuration.
 - Build both images for `linux/amd64` and upload Docker-loadable archives. The bridge uses `PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/` and `PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io` through its existing Docker build arguments; retain hash-checked requirements.
 - Frontend Terraform is `infra/frontend`, currently referencing `infra/modules/aca`. Keep other resource-group roots and state isolated; use explicit root-local tfvars and separate backend inputs.
 - Preserve PRs targeting `main` and pushes to `main`, filtered exactly to `src/frontend/**`, `infra/frontend/**`, and `infra/modules/**`, unless the user changes that scope. Workflow/action-only edits therefore do not automatically trigger CI.
-- Preserve separate formatting checks before initialization/validation and require validation success before the plan job.
+- Preserve separate formatting checks before initialization/validation. Trusted runs validate and plan in one environment matrix job; fork/bot PRs use a separate uncredentialed validation job.
 - Pass Terraform environments as JSON objects with `name`, `state_storage_account`, and `state_container`, defaulting to the dev configuration. Each entry selects its matching GitHub Environment and root-local `<name>.tfvars`. Isolate environments in separate storage accounts and pass one environment-neutral, root-specific state key per workflow call.
 - This feature uploads artifacts only: no registry push, Terraform apply, Foundry publication, Bicep provisioning, or additional deployment workflows.
 
@@ -67,7 +67,7 @@ action-version table exists in shared instructions or introduce unused tooling.
 
 ## Identity, Plans, and Artifacts
 
-- Preserve least privilege: `contents: read` by default; `id-token: write` only for the plan job and its necessary caller permission ceiling. Composites cannot grant job permissions or choose protected environments.
+- Preserve least privilege: `contents: read` by default; `id-token: write` only for the trusted validation/plan matrix job and its necessary caller permission ceiling. The fork/bot validation job must not receive OIDC permission or an Azure environment. Composites cannot grant job permissions or choose protected environments.
 - Use the matching GitHub Environment for each Terraform matrix entry, without introducing a required-reviewer gate. Each environment requires its own approved OIDC trust and isolated backend configuration. Same-repository eligible PR code consequently has access to plan credentials; do not describe the absence of reviewers as a security boundary.
 - Fork and bot PRs receive only image builds and backend-free validation. Never use `pull_request_target` to execute PR code with credentials.
 - Keep Azure identifiers in the existing environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. These identifiers are configuration, not passwords. Do not claim federation is configured without verifying it.
