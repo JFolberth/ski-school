@@ -4,14 +4,13 @@ output "application_insights_id" {
 }
 
 output "application_insights_otlp" {
-  description = "Asynchronous component DCR metadata, null until native OTLP is enabled. Endpoints are not exported; retrieve the actual signal endpoints privately from the component for a later approved stage."
+  description = "Asynchronous service-returned component DCR metadata, null until native OTLP is enabled. Configured exporter endpoint URLs are exposed separately and are not represented by this metadata."
   value       = try(module.application_insights[0].otlp, null)
 }
 
 output "gateway_hostname" {
   description = "Service-returned runtime hostname; use a configured alias and Entra caller authorization."
   value       = module.gateway.hostname
-  sensitive   = true
 }
 
 output "gateway_id" {
@@ -42,6 +41,11 @@ output "model_ids" {
 output "resource_group_id" {
   description = "Gateway-owned resource group ARM ID."
   value       = module.resource_group.id
+}
+
+output "telemetry_exporter_endpoints" {
+  description = "Configured OTLP endpoint URL metadata from telemetry_exporter; these are input values, not asynchronous service-returned DCR endpoints."
+  value       = try(var.telemetry_exporter.endpoints, null)
 }
 
 output "telemetry_exporter_id" {

@@ -1,0 +1,21 @@
+name: Validate Terraform source
+description: Check formatting and validate with the committed lockfile without backend access.
+inputs:
+  terraform-root:
+    description: Repository-relative Terraform root.
+    default: infra/frontend
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/terraform-fmt
+    - name: Validate without backend access
+      shell: bash
+      env:
+        TF_ROOT: ${{ inputs.terraform-root }}
+      run: |
+        set -euo pipefail
+        directory=$(mktemp -d "$RUNNER_TEMP/terraform-validation.XXXXXX")
+        trap 'rm -rf -- "$directory"' EXIT
+        export TF_DATA_DIR="$directory"
+        terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color
+        terraform -chdir="$TF_ROOT" validate -no-color

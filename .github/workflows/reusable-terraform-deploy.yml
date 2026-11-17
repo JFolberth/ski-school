@@ -1,0 +1,190 @@
+name: Reusable artifact-source Terraform deployment
+
+on:
+  workflow_call:
+    inputs:
+      artifact-id:
+        description: Immutable source artifact ID from this main CI run.
+        type: string
+        required: true
+      artifact-digest:
+        description: SHA-256 archive digest returned by CI publication.
+        type: string
+        required: true
+      modules-artifact-id:
+        description: Immutable shared modules artifact from the same orchestration.
+        type: string
+        required: true
+      modules-artifact-digest:
+        description: SHA-256 digest returned by the shared modules producer.
+        type: string
+        required: true
+      artifact-prefix:
+        type: string
+        default: gateway-ci
+      environments:
+        description: Full verified target manifest exposed by successful main CI.
+        type: string
+        required: true
+      state-key:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
+jobs:
+  deploy:
+    name: Apply verified gateway source (${{ matrix.environment.name }})
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: ${{ fromJSON(inputs.environments) }}
+    environment: ${{ matrix.environment.name }}
+    concurrency:
+      group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_USE_CLI: "false"
+      ARM_SKIP_PROVIDER_REGISTRATION: "true"
+      AZAPI_LOG_SENSITIVE_DATA: "false"
+      AZURE_CORE_OUTPUT: none
+    steps:
+      - name: Download and verify the exact CI source and shared modules
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_ID: ${{ inputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ inputs.artifact-digest }}
+          ARTIFACT_NAME: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          MODULES_ARTIFACT_ID: ${{ inputs.modules-artifact-id }}
+          MODULES_ARTIFACT_DIGEST: ${{ inputs.modules-artifact-digest }}
+          STATE_KEY: ${{ inputs.state-key }}
+          ENVIRONMENTS: ${{ inputs.environments }}
+        run: |
+          set -euo pipefail
+          directory=$(mktemp -d "$RUNNER_TEMP/gateway-download.XXXXXX")
+          trap 'rm -rf -- "$directory"' EXIT
+          export GH_HOST="${GITHUB_SERVER_URL#https://}"
+          for kind in source modules; do
+            if [[ "$kind" == source ]]; then
+              id="$ARTIFACT_ID"; digest="$ARTIFACT_DIGEST"; name="$ARTIFACT_NAME"
+            else
+              id="$MODULES_ARTIFACT_ID"; digest="$MODULES_ARTIFACT_DIGEST"
+              name="terraform-modules-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            fi
+            if [[ ! "$id" =~ ^[0-9]+$ || ! "$digest" =~ ^[a-f0-9]{64}$ ]]; then
+              echo "::error::Successful CI must supply exact artifact IDs and SHA-256 digests."
+              exit 1
+            fi
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" |
+              jq -e --arg id "$id" --arg digest "$digest" --arg name "$name" '
+                (.id | tostring) == $id and .name == $name and .expired == false and
+                .digest == ("sha256:" + $digest) and
+                (.workflow_run.id | tostring) == env.GITHUB_RUN_ID and
+                .workflow_run.head_sha == env.GITHUB_SHA and
+                .workflow_run.head_branch == "main"
+              ' > /dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$id/zip" > "$directory/$kind.zip"
+            [[ "$(sha256sum "$directory/$kind.zip" | cut -d ' ' -f 1)" == "$digest" ]]
+          done
+          export ARCHIVE_DIRECTORY="$directory"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path, PurePosixPath
+          import stat
+          from zipfile import ZipFile
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          if any(workspace.iterdir()):
+              raise SystemExit("Artifact-only deployment requires an empty workspace.")
+          environments = json.loads(os.environ["ENVIRONMENTS"])
+          actions = {
+              f".github/actions/{name}/action.yml"
+              for name in ("terraform-fmt", "terraform-validate", "terraform-plan-artifact")
+          }
+          required = actions | {
+              "infra/gateway/main.tf",
+              "infra/gateway/.terraform.lock.hcl",
+              "provenance.json",
+          } | {f'infra/gateway/{target["name"]}.tfvars' for target in environments}
+          def allowed(name, kind):
+              path = PurePosixPath(name)
+              if kind == "modules":
+                  return name == "modules-provenance.json" or (
+                      name.startswith("infra/modules/") and path.suffix == ".tf"
+                  )
+              return (
+                  name in required
+                  or (str(path.parent) == "infra/gateway" and path.suffix == ".tf")
+              )
+          for kind in ("source", "modules"):
+              manifest = "provenance.json" if kind == "source" else "modules-provenance.json"
+              with ZipFile(Path(os.environ["ARCHIVE_DIRECTORY"]) / f"{kind}.zip") as archive:
+                  files = {}
+                  for entry in archive.infolist():
+                      name = entry.filename
+                      path = PurePosixPath(name)
+                      if path.is_absolute() or ".." in path.parts or "\\" in name:
+                          raise SystemExit("Artifact contains an unsafe path.")
+                      if entry.is_dir():
+                          continue
+                      if str(path) != name or not allowed(name, kind) or name in files:
+                          raise SystemExit("Artifact contains duplicate or unapproved files.")
+                      if stat.S_IFMT(entry.external_attr >> 16) not in (0, stat.S_IFREG):
+                          raise SystemExit("Artifact contains a non-regular file.")
+                      files[name] = entry
+                  if kind == "source" and not required.issubset(files):
+                      raise SystemExit("Artifact is missing required deployment source.")
+                  expected = {key: os.environ[value] for key, value in {
+                      "repository": "GITHUB_REPOSITORY", "sha": "GITHUB_SHA",
+                      "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT",
+                  }.items()}
+                  if kind == "source":
+                      expected.update(environments=environments, state_key=os.environ["STATE_KEY"])
+                  expected["files"] = sorted(set(files) - {manifest})
+                  if not expected["files"] or json.loads(archive.read(manifest)) != expected:
+                      raise SystemExit("Artifact manifest does not match the approved run/target/modules.")
+                  archive.extractall(workspace, members=files.values())
+          PY
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - name: Validate artifact source
+        uses: ./.github/actions/terraform-validate
+        with:
+          terraform-root: infra/gateway
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ env.ARM_CLIENT_ID }}
+          tenant-id: ${{ env.ARM_TENANT_ID }}
+          subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
+      - name: Freshly plan and apply artifact source
+        uses: ./.github/actions/terraform-plan-artifact
+        with:
+          terraform-root: infra/gateway
+          environment: ${{ matrix.environment.name }}
+          state-account: ${{ matrix.environment.state_storage_account }}
+          state-container: ${{ matrix.environment.state_container }}
+          state-key: ${{ inputs.state-key }}
+          require-session-signing-key: "false"
+          expected-resource-group: ${{ matrix.environment.expected_resource_group }}
+          apply: "true"

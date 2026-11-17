@@ -6,6 +6,5 @@ locals {
   model_backends       = var.models
   alias_backends       = length(var.models) == 0 ? {} : { primary = { name = var.model_alias } }
   alias_model_keys     = sort(keys(var.models))
-  # Only the presence of the handoff is public; endpoint values remain sensitive.
-  telemetry_exporters = nonsensitive(var.telemetry_exporter == null) ? toset([]) : toset(["primary"])
+  telemetry_exporters  = var.telemetry_exporter == null ? toset([]) : toset(["primary"])
 }

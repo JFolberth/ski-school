@@ -1,8 +1,8 @@
-# Select this file explicitly: terraform plan -var-file=dev.tfvar
+# Select this file explicitly: terraform plan -var-file=dev.tfvars
 # Backend initialization and deployment require separate approval.
-# Includes the existing managed telemetry exporter; keep this file private and ignored.
+# Includes the existing managed telemetry exporter; endpoint URLs are configuration metadata, not credentials.
 # The live runtime caller grant is external; do not adopt it into this state.
-# Keep telemetry_exporter configuration in this private, ignored file; never move its endpoint values to a tracked template.
+# Keep actual credentials and connection strings out of this tracked configuration.
 alias_policy_limits = {
   monthly_cost_usd    = 10
   requests_per_minute = 30
@@ -53,7 +53,7 @@ monitor_workspace_id = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/reso
 native_otlp_enabled  = true
 subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"
 tags                 = {}
-# telemetry_exporter is supplied only by the required second variable file.
+# Endpoint URLs here are configured values, distinct from asynchronous service-returned DCR metadata.
 telemetry_exporter = {
   "data_collection_rule_id" : "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/ai_appi-ski-gateway-dev-eus2_50797926-934b-4403-a5c8-8a2d014953fe_managed/providers/Microsoft.Insights/dataCollectionRules/managed-appi-ski-gateway-dev-eus2-dcr",
   "endpoints" : {

@@ -1,99 +1,135 @@
 name: Check Terraform plan
-description: Check an approved target against existing remote state without publishing private outputs.
+description: Plan against existing remote state and optionally apply the verified private plan on main.
 inputs:
   terraform-root:
     description: Repository-relative Terraform root.
     default: infra/frontend
   environment:
-    description: Environment name; selects the matching tfvars file in the Terraform root.
+    description: Environment selecting the root-local tfvars.
     default: dev
+  state-account:
+    description: Existing environment-isolated backend storage account.
+    required: true
+  state-container:
+    description: Existing state container.
+    required: true
+  state-key:
+    description: Existing root-specific state key.
+    required: true
+  require-session-signing-key:
+    description: Require the frontend runtime secret for frontend plans.
+    default: "true"
+  expected-resource-group:
+    description: Gateway resource group to verify; required for apply.
+    default: ""
+  apply:
+    description: Apply the guarded saved plan; allowed only on a main push.
+    default: "false"
 runs:
   using: composite
   steps:
-    - name: Require configuration and prepare private directory
-      id: private
+    - name: Initialize, plan, verify, and optionally apply
       shell: bash
       env:
         TF_ROOT: ${{ inputs.terraform-root }}
-        TFVARS: ${{ inputs.environment }}.tfvars
+        TARGET_ENVIRONMENT: ${{ inputs.environment }}
+        STATE_ACCOUNT: ${{ inputs.state-account }}
+        STATE_CONTAINER: ${{ inputs.state-container }}
+        STATE_KEY: ${{ inputs.state-key }}
+        REQUIRE_SIGNING_KEY: ${{ inputs.require-session-signing-key }}
+        EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
+        APPLY: ${{ inputs.apply }}
       run: |
-        for name in ARM_CLIENT_ID ARM_TENANT_ID ARM_SUBSCRIPTION_ID STATE_ACCOUNT \
-          STATE_CONTAINER STATE_KEY TF_VAR_session_signing_key; do
-          if [[ -z "$(printenv "$name")" ]]; then
-            echo "::error::Missing required plan configuration: $name"
-            exit 1
-          fi
-        done
-        workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
-        for path in "$TF_ROOT" "$TF_ROOT/$TFVARS"; do
-          resolved=$(realpath -e -- "$path")
-          if [[ "$path" == /* || "$resolved" != "$workspace/$path" ]]; then
-            echo "::error::Terraform plan paths must be canonical repository-relative paths without symlinks."
-            exit 1
-          fi
-        done
-        umask 077
-        directory=$(mktemp -d "$(realpath -e -- "$RUNNER_TEMP")/frontend-plan.XXXXXX")
-        trap 'rm -rf -- "$directory"' ERR
-        echo "directory=$directory" >> "$GITHUB_OUTPUT"
-
-    - name: Initialize existing remote state
-      shell: bash
-      env:
-        TF_ROOT: ${{ inputs.terraform-root }}
-        DIRECTORY: ${{ steps.private.outputs.directory }}
-        TF_DATA_DIR: ${{ steps.private.outputs.directory }}/data
-      run: |
-        umask 077
-        if ! exists=$(az storage blob exists --auth-mode login --account-name "$STATE_ACCOUNT" \
-          --container-name "$STATE_CONTAINER" --name "$STATE_KEY" \
-          --query exists --output tsv 2> "$DIRECTORY/init.log") || [[ "$exists" != true ]]; then
-          echo "::error::Existing remote state and authorized identity access are required. CI cannot bootstrap."
+        set -euo pipefail
+        : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
+          "${ARM_SUBSCRIPTION_ID:?Required Azure subscription ID}" "${STATE_ACCOUNT:?Required state account}" \
+          "${STATE_CONTAINER:?Required state container}" "${STATE_KEY:?Required state key}"
+        if [[ "$REQUIRE_SIGNING_KEY" == true ]]; then
+          : "${TF_VAR_session_signing_key:?Required frontend session signing key}"
+        fi
+        if [[ ! "$APPLY" =~ ^(true|false)$ || ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
+          echo "::error::Invalid apply or environment configuration."
           exit 1
         fi
+        if [[ "$APPLY" == true && ( "$GITHUB_EVENT_NAME" != push ||
+          "$GITHUB_REF" != refs/heads/main || -z "$EXPECTED_RESOURCE_GROUP" ) ]]; then
+          echo "::error::Apply requires an explicitly configured gateway target and a main push."
+          exit 1
+        fi
+        workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
+        for path in "$TF_ROOT" "$TF_ROOT/$TARGET_ENVIRONMENT.tfvars"; do
+          resolved=$(realpath -e -- "$path")
+          if [[ "$path" == /* || "$resolved" != "$workspace/$path" ]]; then
+            echo "::error::Terraform paths must be canonical repository-relative paths without symlinks."
+            exit 1
+          fi
+        done
+        if ! az account show --output json |
+          jq -e '.id == env.ARM_SUBSCRIPTION_ID and .tenantId == env.ARM_TENANT_ID' > /dev/null; then
+          echo "::error::Authenticated Azure tenant/subscription does not match the configured target."
+          exit 1
+        fi
+        {
+          echo "Terraform target: tenant $ARM_TENANT_ID; subscription $ARM_SUBSCRIPTION_ID; environment $TARGET_ENVIRONMENT."
+          echo "Resource group: ${EXPECTED_RESOURCE_GROUP:-selected by root inputs}. Backend: $STATE_ACCOUNT/$STATE_CONTAINER/$STATE_KEY."
+          echo "Apply enabled: $APPLY. Azure changes may incur charges; Terraform does not provide a cost estimate."
+        } >> "$GITHUB_STEP_SUMMARY"
+        umask 077
+        DIRECTORY=$(mktemp -d "$RUNNER_TEMP/terraform-plan.XXXXXX")
+        trap 'rm -rf -- "$DIRECTORY"' EXIT
+        export TF_DATA_DIR="$DIRECTORY/data"
         if ! terraform -chdir="$TF_ROOT" init -lockfile=readonly -no-color \
           -backend-config="storage_account_name=$STATE_ACCOUNT" \
           -backend-config="container_name=$STATE_CONTAINER" \
           -backend-config="key=$STATE_KEY" > "$DIRECTORY/init.log" 2>&1; then
-          echo "::error::Remote initialization failed. Check OIDC, approved backend inputs, and the committed lockfile."
+          echo "::error::Remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
           exit 1
         fi
 
-    - name: Check plan and approved target
-      shell: bash
-      env:
-        TF_ROOT: ${{ inputs.terraform-root }}
-        TFVARS: ${{ inputs.environment }}.tfvars
-        TARGET_ENVIRONMENT: ${{ inputs.environment }}
-        DIRECTORY: ${{ steps.private.outputs.directory }}
-        TF_DATA_DIR: ${{ steps.private.outputs.directory }}/data
-      run: |
-        set -euo pipefail
-        umask 077
-        if ! terraform -chdir="$TF_ROOT" plan -var-file="$TFVARS" \
-          -lock-timeout=60s -no-color -out="$DIRECTORY/frontend.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
+        if ! terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
+          -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
           echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
           exit 1
         fi
-        if ! {
-          terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/frontend.tfplan" |
-          jq -e '.errored != true and
-            .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
-            .variables.environment.value == env.TARGET_ENVIRONMENT'
-        } > /dev/null 2> "$DIRECTORY/plan.log"; then
-          echo "::error::Cannot verify the plan matches the approved target. Raw diagnostics are withheld."
+        if ! terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/terraform.tfplan" \
+          > "$DIRECTORY/plan.json" 2> "$DIRECTORY/show.log"; then
+          echo "::error::Cannot read the private saved plan."
           exit 1
         fi
+        if ! jq -e '
+          ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
+          ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
+          (.variables.telemetry_exporter.value.data_collection_rule_id // "" | ascii_downcase) as $dcr |
+          .errored != true and
+          .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
+          .variables.environment.value == env.TARGET_ENVIRONMENT and
+          (if env.EXPECTED_RESOURCE_GROUP == "" then true else
+            .variables.tenant_id.value == env.ARM_TENANT_ID and
+            (.planned_values.outputs.resource_group_id.value | ascii_downcase) == $group and
+            all(.resource_changes[]? | select(.mode == "managed");
+              (.change.actions | index("delete") | not) and
+              (.change.after as $after |
+                ($after.parent_id // "" | ascii_downcase) as $parent |
+                ($parent == $group or ($parent | startswith($group + "/"))) or
+                (($after.type | startswith("Microsoft.Resources/resourceGroups@")) and
+                  $after.name == env.EXPECTED_RESOURCE_GROUP and
+                  $parent == $subscription) or
+                (($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
+                  $parent == $dcr and
+                  $parent != "")
+              )
+            )
+          end)' "$DIRECTORY/plan.json" > /dev/null 2> "$DIRECTORY/guard.log"; then
+          echo "::error::Plan target verification failed, or gateway plan includes a deletion, replacement, or unapproved scope."
+          exit 1
+        fi
+        echo "Terraform plan verified. Private plan and diagnostics are not published." >> "$GITHUB_STEP_SUMMARY"
 
-    - name: Remove private Terraform files
-      if: ${{ always() && steps.private.outputs.directory != '' }}
-      shell: bash
-      env:
-        DIRECTORY: ${{ steps.private.outputs.directory }}
-      run: |
-        if [[ -L "$DIRECTORY" || "${DIRECTORY##*/}" != frontend-plan.* ||
-          "$(dirname -- "$DIRECTORY")" != "$(realpath -e -- "$RUNNER_TEMP")" ]]; then
-          echo "::error::Refusing cleanup outside the owned private directory."
-          exit 1
+        if [[ "$APPLY" == true ]]; then
+          if ! terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=60s -no-color \
+            "$DIRECTORY/terraform.tfplan" > "$DIRECTORY/apply.log" 2>&1; then
+            echo "::error::Terraform apply failed. Inspect the target securely before retrying; raw diagnostics are withheld."
+            exit 1
+          fi
+          echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
         fi
-        rm -rf -- "$DIRECTORY"

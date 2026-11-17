@@ -26,9 +26,9 @@ no-new-test-cases policies. Agent profiles are operational configuration.
 - Build both images for `linux/amd64` and upload Docker-loadable archives. The bridge uses `PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/` and `PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io` through its existing Docker build arguments; retain hash-checked requirements.
 - Frontend Terraform is `infra/frontend`, currently referencing `infra/modules/aca`. Keep other resource-group roots and state isolated; use explicit root-local tfvars and separate backend inputs.
 - Preserve PRs targeting `main` and pushes to `main`, filtered exactly to `src/frontend/**`, `infra/frontend/**`, and `infra/modules/**`, unless the user changes that scope. Workflow/action-only edits therefore do not automatically trigger CI.
-- Preserve separate formatting checks before initialization/validation. Trusted runs validate and plan in one environment matrix job; fork/bot PRs use a separate uncredentialed validation job.
+- Preserve separate formatting checks before initialization/validation. Trusted runs validate and plan in one environment matrix job; fork/bot PRs skip Terraform validation/planning. Do not reintroduce a separate uncredentialed validation job.
 - Pass Terraform environments as JSON objects with `name`, `state_storage_account`, and `state_container`, defaulting to the dev configuration. Each entry selects its matching GitHub Environment and root-local `<name>.tfvars`. Isolate environments in separate storage accounts and pass one environment-neutral, root-specific state key per workflow call.
-- This feature uploads artifacts only: no registry push, Terraform apply, Foundry publication, Bicep provisioning, or additional deployment workflows.
+- Frontend CI remains artifact-only with checked-out modules and no shared-module producer dependency or gateway source publisher. Gateway PR CI and main-push CD must be structurally separate visible workflows: PR CI must not call a deployment job, even conditionally. Both call the same gateway checks/source orchestration, with one environment manifest and one shared-module producer per run. Main CD consumes that same run's exact verified source/module artifacts, freshly plans, and applies that plan without cross-run lookups or `workflow_run`. No registry push, Foundry publication, Bicep provisioning, live deployment, or state migration is authorized by configuration authoring.
 
 ## Reusable Boundaries
 
@@ -40,7 +40,7 @@ no-new-test-cases policies. Agent profiles are operational configuration.
 - Map action inputs through step `env:` before using them in `run:` commands. Quote expansions and validate paths stay inside their approved repository or runner-temporary boundary.
 - Use `shell: bash` on every composite `run:` step. Do not assume workflow-level environment variables or implicit `INPUT_*` variables are an action's declared interface.
 - Keep top-level action `name` and `description` static. Use expressions only in fields supported by GitHub's metadata schema.
-- Checkout must precede local `uses: ./.github/actions/...`. Do not checkout again inside each composite.
+- Checkout must precede local `uses: ./.github/actions/...`, except approved artifact-only gateway CD, which downloads and verifies its CI bundle before using bundled local actions. Do not checkout again inside each composite.
 - Keep Azure login in the calling workflow before Azure CLI-dependent composites. Actions consume the authenticated context; they must not choose an identity, create federation/RBAC, or initiate a separate login.
 - Avoid hidden `GITHUB_ENV` changes. Prefer explicit action inputs, step-local environment, and declared outputs for temporary paths and generated artifacts.
 - Ensure private temporary data is cleaned on success and failure, including when a preceding action fails; extraction must not weaken cleanup guarantees.
@@ -67,9 +67,9 @@ action-version table exists in shared instructions or introduce unused tooling.
 
 ## Identity, Plans, and Artifacts
 
-- Preserve least privilege: `contents: read` by default; `id-token: write` only for the trusted validation/plan matrix job and its necessary caller permission ceiling. The fork/bot validation job must not receive OIDC permission or an Azure environment. Composites cannot grant job permissions or choose protected environments.
+- Preserve least privilege: `contents: read` by default; `id-token: write` only for trusted plan and approved gateway deployment jobs and their necessary caller permission ceilings. Fork/bot PRs must not receive Azure credentials. Composites cannot grant job permissions or choose protected environments.
 - Use the matching GitHub Environment for each Terraform matrix entry, without introducing a required-reviewer gate. Each environment requires its own approved OIDC trust and isolated backend configuration. Same-repository eligible PR code consequently has access to plan credentials; do not describe the absence of reviewers as a security boundary.
-- Fork and bot PRs receive only image builds and backend-free validation. Never use `pull_request_target` to execute PR code with credentials.
+- Fork and bot PRs skip authenticated Terraform jobs. Never use `pull_request_target` to execute PR code with credentials.
 - Keep Azure identifiers in the existing environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`. These identifiers are configuration, not passwords. Do not claim federation is configured without verifying it.
 - Because the plan job names an environment, verify its actual environment-bound OIDC subject/trust configuration rather than assuming branch or PR subjects. Verify against GitHub's official OIDC documentation.
 - Supply `ARM_CLIENT_ID`, `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `ARM_USE_OIDC=true`, and `ARM_USE_AZUREAD=true`; disable Azure CLI fallback and provider auto-registration for Terraform as currently configured.
@@ -77,7 +77,7 @@ action-version table exists in shared instructions or introduce unused tooling.
 - Fail on missing target/backend/secret configuration. Require existing approved remote state, locking, Entra authentication, and the readonly provider lockfile. No silent local-state fallback, bootstrap, migration, schema-check bypass, or automatic permission grants.
 - Before authenticated backend operations or any cloud/state write, identify the tenant, subscription, resource group, and environment, show effects/costs/risks, and obtain target-specific approval. Configuration authoring is not execution approval.
 - Use a normal Terraform plan success/failure check; custom change-count reporting and plan summary artifacts are not needed. Keep actual raw plan/provider diagnostics and state out of logs and uploaded artifacts.
-- Upload Terraform source files and the lockfile directly from an explicit allowlist, without custom archives or metadata. Image artifacts contain only `image.tar`; do not add custom checksums or provenance JSON. Exclude tfvars, raw/binary plans, state, backend settings, caches, and secrets, including tracked dev tfvars.
+- Upload Terraform source files and the lockfile from an explicit allowlist. The approved gateway deployment-source bundle also includes only its selected non-secret `infra/gateway/<name>.tfvars` (initially dev), required local actions/modules, and the full environment/backend/resource-group manifest plus run/revision provenance so every CD matrix entry consumes that exact artifact without a branch checkout. Publish once after all CI plans pass; forward the CI environment manifest to CD instead of duplicating target lists. Exclude all unselected tfvars, raw/binary plans, state, backend settings, caches, and actual secrets. Image artifacts contain only `image.tar`; do not add custom checksums or provenance JSON to image artifacts.
 - Associate image archives and Terraform artifacts by revision/run identity; never call an archive checksum a registry manifest digest or claim an unpushed image exists in ACR.
 
 ## Validation and Return Contract
