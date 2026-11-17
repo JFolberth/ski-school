@@ -80,17 +80,16 @@ module "telemetry_publisher" {
   source       = "../modules/role-assignment"
   principal_id = module.gateway.principal_id
   # Monitoring Metrics Publisher permits telemetry ingestion on this DCR.
-  role_definition_id = "/subscriptions/${split("/", var.telemetry_exporter.data_collection_rule_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
-  scope_id           = var.telemetry_exporter.data_collection_rule_id
+  role_definition_id = "/subscriptions/${split("/", nonsensitive(var.telemetry_exporter.data_collection_rule_id))[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
+  scope_id           = nonsensitive(var.telemetry_exporter.data_collection_rule_id)
 }
 
 module "telemetry_exporter" {
-  for_each                = local.telemetry_exporters
-  source                  = "../modules/ai-gateway-telemetry-exporter"
-  application_insights_id = module.application_insights[0].id
-  endpoints               = var.telemetry_exporter.endpoints
-  name                    = "otlp-${local.suffix}"
-  workspace_id            = local.default_workspace_id
+  for_each     = local.telemetry_exporters
+  source       = "../modules/ai-gateway-telemetry-exporter"
+  endpoints    = var.telemetry_exporter.endpoints
+  name         = "otlp-${local.suffix}"
+  workspace_id = local.default_workspace_id
   # Registration requires DCR publish authorization, which is not an exporter property.
   depends_on = [module.telemetry_publisher]
 }

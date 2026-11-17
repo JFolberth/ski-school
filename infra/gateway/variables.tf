@@ -126,8 +126,9 @@ variable "model_provider_endpoint" {
   type        = string
   description = "Actual Foundry account endpoint URL configuration metadata; required with models and supplied separately from the shared account/provider identifiers."
   default     = null
+  sensitive   = true
   validation {
-    condition     = var.model_provider_endpoint == null || can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_provider_endpoint))
+    condition     = nonsensitive(var.model_provider_endpoint == null || can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_provider_endpoint)))
     error_message = "Supply the service-returned HTTPS account origin."
   }
 }
@@ -230,16 +231,17 @@ variable "telemetry_exporter" {
   })
   description = "Configured telemetry DCR ID and endpoint URL metadata. Terraform checks the DCR against asynchronous service-returned component metadata but cannot attest endpoint provenance. Publisher role assignment requires narrow roleAssignments/write on the service-created DCR."
   default     = null
+  sensitive   = true
   validation {
-    condition     = var.telemetry_exporter == null ? true : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Insights/dataCollectionRules/[^/]+$", var.telemetry_exporter.data_collection_rule_id))
+    condition     = nonsensitive(var.telemetry_exporter == null ? true : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Insights/dataCollectionRules/[^/]+$", var.telemetry_exporter.data_collection_rule_id)))
     error_message = "Supply the actual component OTLP data collection rule ARM ID."
   }
   validation {
-    condition = var.telemetry_exporter == null ? true : (
+    condition = nonsensitive(var.telemetry_exporter == null) ? true : (
       var.native_otlp_enabled &&
       try(module.application_insights[0].otlp.data_collection_rule_id, null) != null &&
-      var.telemetry_exporter.data_collection_rule_id == try(module.application_insights[0].otlp.data_collection_rule_id, null) &&
-      alltrue([for endpoint in values(var.telemetry_exporter.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))])
+      nonsensitive(var.telemetry_exporter.data_collection_rule_id) == try(module.application_insights[0].otlp.data_collection_rule_id, null) &&
+      nonsensitive(alltrue([for endpoint in values(var.telemetry_exporter.endpoints) : can(regex("^https://[a-zA-Z0-9.-]+/[^?#[:space:]]+$", endpoint))]))
     )
     error_message = "Enable native OTLP with a region-compatible workspace pair, then supply this component's actual non-null DCR and signal endpoints in a separately approved stage."
   }

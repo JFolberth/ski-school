@@ -1,6 +1,7 @@
 output "hostname" {
-  description = "Service-returned hostname, not a fabricated endpoint; routing still requires separate configuration."
+  description = "Sensitive service-returned hostname, not a fabricated endpoint; retrieve through an explicitly sensitive root output."
   value       = azapi_resource.this.output.properties.frontend.defaultHostname
+  sensitive   = true
 }
 
 output "id" {

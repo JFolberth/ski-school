@@ -110,7 +110,7 @@ runs:
               "\([$managed[] | select(.change.actions | index("update"))] | length) to change, " +
               "\([$managed[] | select(.change.actions | index("delete"))] | length) to destroy.",
             "",
-            "Replacements count as both add and destroy. Attribute values and outputs are omitted.",
+            "Replacements count as both add and destroy. The detailed plan follows after target verification.",
             "",
             (if $changes | length == 0 then "No resource changes." else
               "| Resource | Actions |", "| --- | --- |",
@@ -122,7 +122,6 @@ runs:
           echo "::error::Cannot generate the sanitized Terraform plan summary."
           exit 1
         fi
-        cat "$DIRECTORY/summary.md" >> "$GITHUB_STEP_SUMMARY"
         if ! jq -e '
           ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
           ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
@@ -150,6 +149,93 @@ runs:
           echo "::error::Plan target verification failed, or gateway plan includes a deletion, replacement, or unapproved scope."
           exit 1
         fi
+        if ! terraform -chdir="$TF_ROOT" show -no-color "$DIRECTORY/terraform.tfplan" \
+          > "$DIRECTORY/plan.txt" 2> "$DIRECTORY/show-text.log"; then
+          echo "::error::Cannot render the private saved plan."
+          exit 1
+        fi
+        if ! python3 - "$DIRECTORY/plan.json" "$DIRECTORY/plan.txt" "$DIRECTORY/detail.md" <<'PY'
+        import json
+        import re
+        import sys
+        from pathlib import Path
+
+        with open(sys.argv[1], encoding="utf-8") as source:
+            plan = json.load(source)
+        text = Path(sys.argv[2]).read_text(encoding="utf-8")
+        confidential = re.compile(
+            r"(?i)(secret|password|token|credential|authorization|connection.?string|"
+            r"endpoint|hostname|fqdn|(?:api|access|private|signing)[_-]?key|^key$|^url$)"
+        )
+        values = set()
+
+        def collect(value):
+            if isinstance(value, str) and value:
+                values.add(value)
+                try:
+                    nested = json.loads(value)
+                except (ValueError, TypeError):
+                    return
+                if isinstance(nested, (dict, list)):
+                    scan(nested)
+            elif isinstance(value, dict):
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect(child)
+
+        def marked(value, sensitivity):
+            if sensitivity is True:
+                collect(value)
+            elif isinstance(value, dict) and isinstance(sensitivity, dict):
+                for key, child in value.items():
+                    marked(child, sensitivity.get(key))
+            elif isinstance(value, list) and isinstance(sensitivity, list):
+                for child, flag in zip(value, sensitivity):
+                    marked(child, flag)
+
+        def scan(value):
+            if isinstance(value, dict):
+                if value.get("sensitive") is True and "value" in value:
+                    collect(value["value"])
+                for key, child in value.items():
+                    if confidential.search(key):
+                        collect(child)
+                    scan(child)
+                for prefix in ("before", "after"):
+                    marked(value.get(prefix), value.get(prefix + "_sensitive"))
+            elif isinstance(value, list):
+                for child in value:
+                    scan(child)
+            elif isinstance(value, str) and value[:1] in ("{", "["):
+                try:
+                    nested = json.loads(value)
+                except ValueError:
+                    return
+                if isinstance(nested, (dict, list)):
+                    scan(nested)
+
+        scan(plan)
+        for value in sorted(values, key=len, reverse=True):
+            # Match both ordinary and escaped Terraform string representations.
+            encoded = json.dumps(value, ensure_ascii=False)[1:-1]
+            for candidate in {value, encoded, encoded.replace('"', r'\"')}:
+                if candidate:
+                    text = text.replace(candidate, "[REDACTED]")
+        text = re.sub(r"(?i)\bhttps?://[^\s\"'<>`\\]+", "[REDACTED URL]", text)
+        fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
+        detail = "\n### Detailed Terraform plan\n\nSensitive values and endpoints are redacted.\n\n"
+        detail += f"{fence}terraform\n{text.rstrip()}\n{fence}\n"
+        if len(detail.encode("utf-8")) > 900_000:
+            raise SystemExit("Detailed plan exceeds the safe job summary size.")
+        Path(sys.argv[3]).write_text(detail, encoding="utf-8")
+        PY
+        then
+          echo "::error::Cannot safely redact the Terraform plan."
+          exit 1
+        fi
+        cat "$DIRECTORY/summary.md" "$DIRECTORY/detail.md" >> "$GITHUB_STEP_SUMMARY"
         echo "Terraform plan verified. Private plan and diagnostics are not published." >> "$GITHUB_STEP_SUMMARY"
 
         if [[ "$APPLY" == true ]]; then
