@@ -80,8 +80,8 @@ module "telemetry_publisher" {
   source       = "../modules/role-assignment"
   principal_id = module.gateway.principal_id
   # Monitoring Metrics Publisher permits telemetry ingestion on this DCR.
-  role_definition_id = "/subscriptions/${split("/", var.telemetry_exporter.data_collection_rule_id)[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
-  scope_id           = var.telemetry_exporter.data_collection_rule_id
+  role_definition_id = "/subscriptions/${split("/", nonsensitive(var.telemetry_exporter.data_collection_rule_id))[2]}/providers/Microsoft.Authorization/roleDefinitions/3913510d-42f4-4e42-8a64-420c390055eb"
+  scope_id           = nonsensitive(var.telemetry_exporter.data_collection_rule_id)
 }
 
 module "telemetry_exporter" {

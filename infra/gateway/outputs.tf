@@ -4,13 +4,15 @@ output "application_insights_id" {
 }
 
 output "application_insights_otlp" {
-  description = "Asynchronous service-returned component DCR metadata, null until native OTLP is enabled. Configured exporter endpoint URLs are exposed separately and are not represented by this metadata."
+  description = "Sensitive asynchronous service-returned component OTLP metadata, null until native OTLP is enabled. Retrieve with terraform output -json when required."
   value       = try(module.application_insights[0].otlp, null)
+  sensitive   = true
 }
 
 output "gateway_hostname" {
-  description = "Service-returned runtime hostname; use a configured alias and Entra caller authorization."
+  description = "Sensitive service-returned runtime hostname; retrieve with terraform output -json when required."
   value       = module.gateway.hostname
+  sensitive   = true
 }
 
 output "gateway_id" {
@@ -44,8 +46,9 @@ output "resource_group_id" {
 }
 
 output "telemetry_exporter_endpoints" {
-  description = "Configured OTLP endpoint URL metadata from telemetry_exporter; these are input values, not asynchronous service-returned DCR endpoints."
+  description = "Sensitive configured OTLP endpoint URL metadata; retrieve with terraform output -json when required."
   value       = try(var.telemetry_exporter.endpoints, null)
+  sensitive   = true
 }
 
 output "telemetry_exporter_id" {
