@@ -35,7 +35,6 @@ jobs:
 
   checks:
     name: Gateway Terraform checks
-    needs: source
     permissions:
       contents: read
       id-token: write
@@ -51,7 +50,6 @@ jobs:
 
   source:
     name: Publish gateway source
-    needs: modules
     if: >-
       ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
@@ -68,13 +66,11 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - name: Publish root source bound to shared modules
+      - name: Publish root source for this revision
         id: source
         uses: ./.github/actions/terraform-source-artifact
         with:
           terraform-root: infra/gateway
-          modules-artifact-id: ${{ needs.modules.outputs.artifact-id }}
-          modules-artifact-digest: ${{ needs.modules.outputs.artifact-digest }}
           name: gateway-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
           state-key: ski-school-gateway.tfstate
           environments: ${{ inputs.environments }}

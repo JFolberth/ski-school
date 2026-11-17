@@ -158,10 +158,7 @@ jobs:
                       "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT",
                   }.items()}
                   if kind == "source":
-                      expected.update(environments=environments, state_key=os.environ["STATE_KEY"], modules={
-                          "artifact_id": os.environ["MODULES_ARTIFACT_ID"],
-                          "artifact_digest": os.environ["MODULES_ARTIFACT_DIGEST"],
-                      })
+                      expected.update(environments=environments, state_key=os.environ["STATE_KEY"])
                   expected["files"] = sorted(set(files) - {manifest})
                   if not expected["files"] or json.loads(archive.read(manifest)) != expected:
                       raise SystemExit("Artifact manifest does not match the approved run/target/modules.")

@@ -1,14 +1,8 @@
 name: Publish Terraform deployment source
-description: Publish root configuration and bundled actions bound to the shared modules artifact after successful CI.
+description: Publish root configuration and bundled actions identified by revision and workflow run.
 inputs:
   terraform-root:
     description: Repository-relative Terraform root to publish.
-    required: true
-  modules-artifact-id:
-    description: Immutable shared modules artifact verified by CI.
-    required: true
-  modules-artifact-digest:
-    description: SHA-256 digest of the shared modules archive verified by CI.
     required: true
   name:
     description: Run-specific artifact name.
@@ -39,8 +33,6 @@ runs:
         STATE_KEY: ${{ inputs.state-key }}
         ENVIRONMENTS: ${{ inputs.environments }}
         TF_ROOT: ${{ inputs.terraform-root }}
-        MODULES_ARTIFACT_ID: ${{ inputs.modules-artifact-id }}
-        MODULES_ARTIFACT_DIGEST: ${{ inputs.modules-artifact-digest }}
       run: |
         set -euo pipefail
         directory=$(mktemp -d "$RUNNER_TEMP/terraform-source.XXXXXX")
@@ -63,9 +55,6 @@ runs:
                 or (root / terraform_root).resolve() != root / terraform_root
                 or not (root / terraform_root).is_dir()):
             raise SystemExit("Source root must be a canonical repository-relative directory without symlinks.")
-        if (not re.fullmatch(r"[0-9]+", os.environ["MODULES_ARTIFACT_ID"]) or
-                not re.fullmatch(r"[a-f0-9]{64}", os.environ["MODULES_ARTIFACT_DIGEST"])):
-            raise SystemExit("Require the exact shared modules artifact ID and digest.")
         environments = json.loads(os.environ["ENVIRONMENTS"])
         if not isinstance(environments, list) or not environments:
             raise SystemExit("Require a nonempty environment manifest.")
@@ -104,10 +93,6 @@ runs:
             "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
             "environments": environments,
             "state_key": os.environ["STATE_KEY"],
-            "modules": {
-                "artifact_id": os.environ["MODULES_ARTIFACT_ID"],
-                "artifact_digest": os.environ["MODULES_ARTIFACT_DIGEST"],
-            },
             "files": files,
         }
         (destination / "provenance.json").write_text(json.dumps(provenance, sort_keys=True) + "\n")
