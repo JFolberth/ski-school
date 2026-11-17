@@ -31,11 +31,11 @@ module "application_insights" {
 }
 
 module "model_provider" {
-  for_each     = local.model_backends
+  for_each     = local.alias_backends
   source       = "../modules/ai-gateway-model-provider"
-  account_id   = each.value.account_id
-  endpoint     = each.value.endpoint == null ? var.model_backend_endpoint : each.value.endpoint
-  name         = each.value.provider_name
+  account_id   = var.model_provider.account_id
+  endpoint     = var.model_provider_endpoint
+  name         = var.model_provider.provider_name
   workspace_id = local.default_workspace_id
 }
 
@@ -45,17 +45,25 @@ module "model" {
   deployment_id       = each.value.deployment_id
   model_version       = each.value.model_version
   name                = each.value.model_name
-  provider_id         = module.model_provider[each.key].id
+  provider_id         = module.model_provider["primary"].id
   supported_endpoints = each.value.supported_endpoints
 }
 
 module "model_alias" {
-  for_each      = local.model_backends
-  source        = "../modules/ai-gateway-model-alias"
-  model_id      = module.model[each.key].id
-  name          = each.value.alias_name
-  policy_limits = var.alias_policy_limits
-  workspace_id  = local.default_workspace_id
+  for_each = local.alias_backends
+  source   = "../modules/ai-gateway-model-alias"
+  backend_models = [
+    for key in local.alias_model_keys : {
+      resource_id         = module.model[key].id
+      selector_model_name = local.model_backends[key].selector_model_name
+      priority            = local.model_backends[key].priority
+      weight              = local.model_backends[key].weight
+    }
+  ]
+  auto_model_selection = var.auto_model_selection
+  name                 = each.value.name
+  policy_limits        = var.alias_policy_limits
+  workspace_id         = local.default_workspace_id
 }
 
 module "model_caller" {

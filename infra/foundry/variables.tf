@@ -8,6 +8,7 @@ variable "account_sku_name" {
     error_message = "Only S0 is verified for this AIServices account."
   }
 }
+
 variable "application_insights" {
   type = object({
     application_type    = optional(string, "web")
@@ -81,6 +82,16 @@ variable "gateway_foundry_user_principals" {
   }
 }
 
+variable "gateway_model_key" {
+  type        = string
+  description = "Explicit stable models-map key used for the legacy singular gateway and deployment ID handoffs; this selects an output, not model priority, map order, or default routing."
+  nullable    = false
+  validation {
+    condition     = contains(keys(var.models), var.gateway_model_key)
+    error_message = "gateway_model_key must match a key in models."
+  }
+}
+
 variable "gateway_principals" {
   type        = map(string)
   description = "Existing gateway system-assigned principal UUIDs under explicit stable keys. Populate after gateway identity creation; this root grants only Cognitive Services OpenAI User at the verified account inference scope."
@@ -102,67 +113,48 @@ variable "location" {
   }
 }
 
-variable "model_capacity" {
-  type        = number
-  description = "Required explicit approved GlobalStandard SKU capacity. Verify gpt-5.4-mini model-specific quota-unit-to-TPM/RPM mapping; no defensible default has been established."
+variable "models" {
+  type = map(object({
+    capacity               = number
+    deployment_name        = optional(string)
+    model_name             = optional(string, "gpt-5.4-mini")
+    model_version          = string
+    sku_name               = optional(string, "GlobalStandard")
+    version_upgrade_option = optional(string, "NoAutoUpgrade")
+  }))
+  description = "Account-level OpenAI deployments keyed by stable labels. Verify each model/version, availability, quota, and capacity-unit semantics before selection."
   nullable    = false
   validation {
-    condition     = var.model_capacity >= 1 && floor(var.model_capacity) == var.model_capacity
-    error_message = "Supply a positive integer model capacity, after verifying target quota and unit semantics."
+    condition     = length(var.models) > 0
+    error_message = "Configure at least one model deployment."
   }
-}
-
-variable "model_deployment_name" {
-  type        = string
-  description = "Optional Azure model deployment name override; defaults to gpt-5-4-mini derived from the Foundry base, environment, and region."
-  default     = null
-  nullable    = true
   validation {
-    condition     = var.model_deployment_name == null || can(regex("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$", var.model_deployment_name))
-    error_message = "Use 2–64 lowercase alphanumeric or hyphen characters for the model deployment name."
+    condition = alltrue([
+      for key, model in var.models : try(
+        can(regex("^[a-z][a-z0-9_]*$", key)) &&
+        can(regex("^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$", model.model_name)) &&
+        can(regex("^20[0-9]{2}-[0-9]{2}-[0-9]{2}$", model.model_version)) &&
+        model.capacity >= 1 && floor(model.capacity) == model.capacity &&
+        model.sku_name == "GlobalStandard" &&
+        contains(["NoAutoUpgrade", "OnceCurrentVersionExpired", "OnceNewDefaultVersionAvailable"], model.version_upgrade_option),
+        false
+      )
+    ])
+    error_message = "Use stable lowercase labels, valid lowercase model identifiers, dated versions (20YY-MM-DD), positive integer capacities, GlobalStandard SKU, and a documented upgrade policy."
   }
-}
-
-variable "model_name" {
-  type        = string
-  description = "Selected Azure OpenAI model; changing models requires a scope decision."
-  default     = "gpt-5.4-mini"
-  nullable    = false
   validation {
-    condition     = var.model_name == "gpt-5.4-mini"
-    error_message = "gpt-5.4-mini is the approved model; do not silently substitute."
+    condition = alltrue([
+      for model in values(var.models) :
+      can(regex("^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$", try(model.deployment_name != null ? model.deployment_name : "${replace(model.model_name, ".", "-")}-${local.suffix}", "")))
+    ])
+    error_message = "Deployment names must use 2–64 lowercase alphanumeric or hyphen characters with alphanumeric ends, including the base, environment, and region suffix when derived."
   }
-}
-
-variable "model_sku_name" {
-  type        = string
-  description = "Approved pay-as-you-go model deployment type, distinct from resource location. No provisioned throughput or key fallback."
-  default     = "GlobalStandard"
-  nullable    = false
   validation {
-    condition     = var.model_sku_name == "GlobalStandard"
-    error_message = "Only GlobalStandard global pay-as-you-go inference processing is approved."
-  }
-}
-
-variable "model_version" {
-  type        = string
-  description = "Required Azure gpt-5.4-mini version. Official sample candidate is 2026-03-17; confirm target model/version availability before selecting it."
-  nullable    = false
-  validation {
-    condition     = can(regex("^20[0-9]{2}-[0-9]{2}-[0-9]{2}$", var.model_version))
-    error_message = "Supply an explicit dated Azure model version."
-  }
-}
-
-variable "model_version_upgrade_option" {
-  type        = string
-  description = "Documented Azure model upgrade policy. Default NoAutoUpgrade keeps version selection explicit; retirement still requires review."
-  default     = "NoAutoUpgrade"
-  nullable    = false
-  validation {
-    condition     = contains(["NoAutoUpgrade", "OnceCurrentVersionExpired", "OnceNewDefaultVersionAvailable"], var.model_version_upgrade_option)
-    error_message = "Use a documented model upgrade policy."
+    condition = length(distinct([
+      for model in values(var.models) :
+      try(model.deployment_name != null ? model.deployment_name : "${replace(model.model_name, ".", "-")}-${local.suffix}", "")
+    ])) == length(var.models)
+    error_message = "Model deployment names must be unique, including overrides and derived names."
   }
 }
 

@@ -23,14 +23,22 @@ module "project" {
 }
 
 module "model" {
+  for_each               = var.models
   source                 = "../modules/model-deployment"
   account_id             = module.account.id
-  capacity               = var.model_capacity
-  model_name             = var.model_name
-  model_version          = var.model_version
-  name                   = local.model_deployment_name
-  sku_name               = var.model_sku_name
-  version_upgrade_option = var.model_version_upgrade_option
+  capacity               = each.value.capacity
+  model_name             = each.value.model_name
+  model_version          = each.value.model_version
+  name                   = local.model_deployment_names[each.key]
+  sku_name               = each.value.sku_name
+  version_upgrade_option = each.value.version_upgrade_option
+}
+
+# The legacy singleton state address maps to this root's concrete stable label.
+# Moved addresses are static, repository-specific, and independent of map order.
+moved {
+  from = module.model
+  to   = module.model["gpt_5_4_mini"]
 }
 
 module "project_acr_connection" {

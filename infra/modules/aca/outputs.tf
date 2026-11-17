@@ -15,5 +15,5 @@ output "container_app_url" {
 
 output "runtime_principal_id" {
   description = "System-assigned runtime principal granted access only to the configured existing Foundry agent."
-  value       = azapi_resource.container_app.output.identity.principalId
+  value       = azapi_resource.container_app.identity[0].principal_id
 }

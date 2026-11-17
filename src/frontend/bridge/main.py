@@ -22,6 +22,7 @@ SCOPE = "https://ai.azure.com/.default"
 COOKIE = "__Host-ski-session"
 LIFETIME = 24 * 60 * 60
 CONVERSATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
+MODEL_METADATA_KEY = "ski_school_served_model"
 
 
 def setting(name: str) -> str:
@@ -76,6 +77,25 @@ class SessionError(Exception):
 
 class UpstreamError(Exception):
     pass
+
+
+def responding_model(result: dict) -> str | None:
+    metadata = result.get("metadata")
+    if metadata is None:
+        return None
+    if not isinstance(metadata, dict):
+        raise UpstreamError
+    model = metadata.get(MODEL_METADATA_KEY)
+    if model is None:
+        return None
+    if (
+        not isinstance(model, str)
+        or not 1 <= len(model) <= 512
+        or not model.isascii()
+        or any(character.isspace() or not character.isprintable() for character in model)
+    ):
+        raise UpstreamError
+    return model
 
 
 class Message(BaseModel):
@@ -209,7 +229,11 @@ async def history(request: Request):
                     raise UpstreamError
                 parts = [part["text"] for part in content if isinstance(part, dict) and part.get("type") in ("input_text", "output_text") and isinstance(part.get("text"), str)]
                 if parts:
-                    items.append({"role": item["role"], "text": "\n".join(parts)})
+                    entry: dict[str, str | None] = {"role": item["role"], "text": "\n".join(parts)}
+                    if item["role"] == "assistant":
+                        # The pinned host does not persist provider model metadata on messages.
+                        entry["model"] = None
+                    items.append(entry)
             if not page["has_more"]:
                 return response({"messages": items}, conversation_id=conversation_id)
             cursor = page.get("last_id")
@@ -256,7 +280,8 @@ async def send(request: Request, message: Message):
                          and part.get("type") == "output_text" and isinstance(part.get("text"), str))
         if not parts:
             raise UpstreamError
-        return response({"reply": "\n".join(parts)}, conversation_id=conversation_id)
+        # Only the application's provider-observed metadata carries attribution.
+        return response({"reply": "\n".join(parts), "model": responding_model(result)}, conversation_id=conversation_id)
     except SessionError:
         return response({"error": "Your chat session expired or is invalid. Start a new chat."}, 401)
     except UpstreamError:
