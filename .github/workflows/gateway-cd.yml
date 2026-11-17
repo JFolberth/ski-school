@@ -1,0 +1,40 @@
+name: AI Gateway CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/gateway/**
+      - infra/modules/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Gateway checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-gateway-checks.yml
+
+  deploy:
+    name: Gateway Terraform CD
+    needs: checks
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.checks.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.checks.outputs.artifact-id }}
+      artifact-digest: ${{ needs.checks.outputs.artifact-digest }}
+      modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
+      environments: ${{ needs.checks.outputs.environments }}
+      state-key: ski-school-gateway.tfstate

@@ -124,9 +124,8 @@ variable "model_provider" {
 
 variable "model_provider_endpoint" {
   type        = string
-  description = "Sensitive actual Foundry account endpoint; required with models and supplied separately from the shared account/provider identifiers."
+  description = "Actual Foundry account endpoint URL configuration metadata; required with models and supplied separately from the shared account/provider identifiers."
   default     = null
-  sensitive   = true
   validation {
     condition     = var.model_provider_endpoint == null || can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_provider_endpoint))
     error_message = "Supply the service-returned HTTPS account origin."
@@ -229,9 +228,8 @@ variable "telemetry_exporter" {
       traces  = string
     })
   })
-  description = "Later-stage handoff: privately retrieve this component's actual DCR and signal endpoints together directly from Azure. Terraform checks the DCR against component output but cannot attest endpoint provenance. Publisher role assignment requires narrow roleAssignments/write on the service-created DCR."
+  description = "Configured telemetry DCR ID and endpoint URL metadata. Terraform checks the DCR against asynchronous service-returned component metadata but cannot attest endpoint provenance. Publisher role assignment requires narrow roleAssignments/write on the service-created DCR."
   default     = null
-  sensitive   = true
   validation {
     condition     = var.telemetry_exporter == null ? true : can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.Insights/dataCollectionRules/[^/]+$", var.telemetry_exporter.data_collection_rule_id))
     error_message = "Supply the actual component OTLP data collection rule ARM ID."

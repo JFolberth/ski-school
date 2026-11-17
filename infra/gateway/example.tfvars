@@ -1,4 +1,4 @@
-# Copy to an ignored root-local dev.tfvar and select explicitly with -var-file=dev.tfvar.
+# Copy to a root-local variable file and select explicitly with -var-file=<file>.
 # Supply required subscription_id and tenant_id separately.
 # AI Gateway is available in East US 2 and Sweden Central during public preview.
 alias_policy_limits = {
@@ -19,7 +19,7 @@ gateway_sku = {
 }
 location = "eastus2"
 # Stage these shared provider and alias values with the model registrations below.
-# Use the sensitive service-returned endpoint through TF_VAR_model_provider_endpoint.
+# The Foundry endpoint is non-secret configuration metadata; do not include credentials.
 model_alias = null
 # Explicit stable labels -> actual caller principal UUIDs; grants alias scope only.
 model_callers           = {}
@@ -59,7 +59,7 @@ monitor_workspace_id = null
 native_otlp_enabled  = false
 subscription_id      = "<workload-subscription-uuid>"
 tags                 = {}
-# Later supply the component DCR and actual endpoints securely via TF_VAR_telemetry_exporter.
+# Supply the component DCR and configured endpoint URLs as non-secret metadata.
 telemetry_exporter = null
 tenant_id          = "<workload-tenant-uuid>"
 workspace_id       = null

@@ -1,4 +1,4 @@
-name: Reusable frontend Terraform plan
+name: Reusable Terraform CI
 
 on:
   workflow_call:
@@ -10,7 +10,7 @@ on:
         type: string
         default: infra/modules/aca
       environments:
-        description: JSON array of objects with name, state_storage_account, and state_container.
+        description: JSON target objects with name, state_storage_account, state_container, and (for gateway) expected_resource_group.
         type: string
         default: >-
           [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate"}]
@@ -24,10 +24,21 @@ on:
       retention-days:
         type: number
         default: 7
+      require-session-signing-key:
+        type: boolean
+        default: true
+      publish-source:
+        description: Upload root and module sources in each plan job; gateway orchestration publishes its own verified bundle.
+        type: boolean
+        default: true
     secrets:
       FRONTEND_SESSION_SIGNING_KEY:
-        description: Existing ephemeral session key; required only for eligible plans.
+        description: Existing ephemeral session key; required only for frontend plans.
         required: false
+    outputs:
+      environments:
+        description: Validated environment and backend manifest used by the plan matrix.
+        value: ${{ jobs.configure.outputs.environments }}
 
 permissions:
   contents: read
@@ -37,61 +48,39 @@ env:
   TF_INPUT: "false"
 
 jobs:
-  validate:
-    name: Validate Terraform without Azure access
-    if: >-
-      ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-      !endsWith(github.actor, '[bot]') &&
-      github.event.pull_request.user.type != 'Bot' &&
-      github.event.pull_request.head.repo.full_name == github.repository)) }}
+  configure:
+    name: Validate Terraform environment configuration
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      TERRAFORM_ARTIFACT_SUFFIX: validation
+    timeout-minutes: 5
+    outputs:
+      environments: ${{ steps.targets.outputs.environments }}
     steps:
-      - &checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - &setup-terraform
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.15.5
-          terraform_wrapper: false
-      - &terraform-format
-        name: Check Terraform formatting
-        uses: ./.github/actions/terraform-fmt
-        with:
-          terraform-root: ${{ inputs.terraform-root }}
-          module-path: ${{ inputs.module-path }}
-      - &terraform-validate
-        name: Validate without backend access
+      - name: Validate selected targets before matrix expansion
+        id: targets
         env:
+          ENVIRONMENTS: ${{ inputs.environments }}
           TF_ROOT: ${{ inputs.terraform-root }}
-          TF_DATA_DIR: ${{ runner.temp }}/terraform-validation
         run: |
-          terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color
-          terraform -chdir="$TF_ROOT" validate -no-color
-      - &terraform-source
-        name: Publish Terraform source artifact
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ env.TERRAFORM_ARTIFACT_SUFFIX }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ inputs.terraform-root }}/*.tf
-            ${{ inputs.terraform-root }}/.terraform.lock.hcl
-            ${{ inputs.module-path }}/*.tf
-          retention-days: ${{ inputs.retention-days }}
-          include-hidden-files: "true"
-      - name: Report planning eligibility
-        run: |
-          echo "Terraform plan: not eligible (untrusted event, fork, or bot PR). Only backend-free validation was performed." >> "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          environments=$(jq -ce '
+            if type == "array" and length > 0 and
+              all(.[]; type == "object" and
+                (.name | type == "string" and test("^[a-z]{3}$")) and
+                (.state_storage_account | type == "string" and test("^[a-z0-9]{3,24}$")) and
+                (.state_container | type == "string" and test("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$") and (contains("--") | not)) and
+                (if env.TF_ROOT == "infra/gateway" then
+                  (keys == ["expected_resource_group","name","state_container","state_storage_account"]) and
+                  (.expected_resource_group | type == "string" and test("^[a-zA-Z0-9_-][a-zA-Z0-9_.()-]{0,89}$") and (endswith(".") | not))
+                else true end)) and
+              ([.[].name] | length == (unique | length)) and
+              ([.[].state_storage_account] | length == (unique | length))
+            then . else error("Require nonempty unique environments with isolated storage accounts and explicit gateway resource groups.") end
+          ' <<< "$ENVIRONMENTS")
+          echo "environments=$environments" >> "$GITHUB_OUTPUT"
 
   plan:
-    name: Validate and plan frontend infrastructure (${{ matrix.environment.name }})
+    name: Validate and plan infrastructure (${{ matrix.environment.name }})
+    needs: configure
     if: >-
       ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
@@ -103,27 +92,48 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: ${{ fromJSON(inputs.environments) }}
+        environment: ${{ fromJSON(needs.configure.outputs.environments) }}
     concurrency:
-      group: frontend-terraform-${{ matrix.environment.name }}-${{ inputs.state-key }}
+      group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
       cancel-in-progress: false
     environment: ${{ matrix.environment.name }}
     permissions:
       contents: read
       id-token: write
-    # Environment/OIDC/backend setup requires separate approval; no reviewer gate.
     env:
       TERRAFORM_ARTIFACT_SUFFIX: ${{ matrix.environment.name }}
       ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
       ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
       ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: "true"
+      ARM_USE_AZUREAD: "true"
+      ARM_USE_CLI: "false"
+      ARM_SKIP_PROVIDER_REGISTRATION: "true"
+      AZAPI_LOG_SENSITIVE_DATA: "false"
       AZURE_CORE_OUTPUT: none
     steps:
-      - *checkout
-      - *setup-terraform
-      - *terraform-format
-      - *terraform-validate
-      - *terraform-source
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - name: Check formatting and validate without backend access
+        uses: ./.github/actions/terraform-validate
+        with:
+          terraform-root: ${{ inputs.terraform-root }}
+      - name: Publish Terraform source artifact
+        if: ${{ inputs.publish-source }}
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ env.TERRAFORM_ARTIFACT_SUFFIX }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ inputs.terraform-root }}/*.tf
+            ${{ inputs.terraform-root }}/.terraform.lock.hcl
+            ${{ inputs.module-path }}/**/*.tf
+          retention-days: ${{ inputs.retention-days }}
+          include-hidden-files: "true"
       - uses: Azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
@@ -134,13 +144,10 @@ jobs:
         with:
           terraform-root: ${{ inputs.terraform-root }}
           environment: ${{ matrix.environment.name }}
+          state-account: ${{ matrix.environment.state_storage_account }}
+          state-container: ${{ matrix.environment.state_container }}
+          state-key: ${{ inputs.state-key }}
+          require-session-signing-key: ${{ inputs.require-session-signing-key }}
+          expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
         env:
-          ARM_USE_OIDC: "true"
-          ARM_USE_AZUREAD: "true"
-          ARM_USE_CLI: "false"
-          ARM_SKIP_PROVIDER_REGISTRATION: "true"
-          AZAPI_LOG_SENSITIVE_DATA: "false"
-          STATE_ACCOUNT: ${{ matrix.environment.state_storage_account }}
-          STATE_CONTAINER: ${{ matrix.environment.state_container }}
-          STATE_KEY: ${{ inputs.state-key }}
           TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
