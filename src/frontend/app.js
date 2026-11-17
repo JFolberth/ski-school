@@ -94,7 +94,7 @@ function renderAssistantMessage(body, text) {
   flushParagraph();
 }
 
-function appendMessage(role, text) {
+function appendMessage(role, text, model = null) {
   const article = document.createElement("article");
   article.className = `message message-${role}`;
   const label = document.createElement("h2");
@@ -108,6 +108,14 @@ function appendMessage(role, text) {
     body.textContent = text;
   }
   article.append(label, body);
+  if (role === "assistant") {
+    const attribution = document.createElement("p");
+    attribution.className = "message-model";
+    attribution.textContent = typeof model === "string" && model.trim()
+      ? `Model: ${model.trim()}`
+      : "Model unavailable";
+    article.append(attribution);
+  }
   messages.append(article);
 }
 
@@ -127,7 +135,7 @@ async function loadHistory() {
       if (!["user", "assistant"].includes(message.role) || typeof message.text !== "string") {
         throw new Error("Conversation history is unavailable.");
       }
-      appendMessage(message.role, message.text);
+      appendMessage(message.role, message.text, message.model);
     }
     welcome.hidden = data.messages.length > 0;
     conversation.hidden = data.messages.length === 0;
@@ -163,7 +171,7 @@ async function submitMessage(text) {
     });
     if (typeof data.reply !== "string" || !data.reply) throw new Error("The assistant returned an empty reply.");
     if (currentGeneration !== generation) return;
-    appendMessage("assistant", data.reply);
+    appendMessage("assistant", data.reply, data.model);
     replyStatus.textContent = "";
   } catch (error) {
     if (currentGeneration !== generation) return;

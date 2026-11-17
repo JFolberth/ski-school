@@ -28,6 +28,18 @@ variable "application_insights" {
   }
 }
 
+variable "auto_model_selection" {
+  type = object({
+    objective = string
+  })
+  description = "Optional AI Gateway automatic selection settings; null preserves priority-only routing."
+  default     = null
+  validation {
+    condition     = var.auto_model_selection == null || var.auto_model_selection.objective == "Balanced"
+    error_message = "Only the officially verified Balanced selection objective is supported by this configuration."
+  }
+}
+
 variable "base_name" {
   type        = string
   description = "Independent short gateway stem, maximum 11 characters for aig-<base>-<env>-<region> (24 total). aig is a proposed local prefix, not CAF."
@@ -73,45 +85,13 @@ variable "location" {
   }
 }
 
-variable "model_backend" {
-  type = object({
-    account_id          = string
-    deployment_id       = string
-    endpoint            = optional(string)
-    model_version       = string
-    provider_name       = string
-    model_name          = string
-    alias_name          = string
-    supported_endpoints = optional(set(string), ["/openai/v1/responses"])
-  })
-  description = "Staged Foundry gateway_backend output handoff and explicit provider, model, and alias names. Null creates gateway identity first; populate after the Foundry root grants that principal upstream inference access."
-  default     = null
-  validation {
-    condition     = var.model_backend == null ? true : startswith(lower(var.model_backend.deployment_id), "${lower(var.model_backend.account_id)}/deployments/")
-    error_message = "The backend deployment must belong to the explicitly supplied Foundry account."
-  }
-  validation {
-    condition     = var.model_backend == null ? var.model_backend_endpoint == null : (var.model_backend.endpoint == null) != (var.model_backend_endpoint == null)
-    error_message = "For a configured backend supply exactly one actual endpoint, either in model_backend or via the sensitive model_backend_endpoint input."
-  }
-  validation {
-    condition = var.model_backend == null ? true : (
-      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.model_backend.provider_name)) &&
-      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.model_backend.model_name)) &&
-      can(regex("^[a-zA-Z0-9_.-]+$", var.model_backend.alias_name))
-    )
-    error_message = "Provide valid provider, gateway model, and alias names for the configured backend."
-  }
-}
-
-variable "model_backend_endpoint" {
+variable "model_alias" {
   type        = string
-  description = "Sensitive alternative to model_backend.endpoint; supply the actual existing Foundry account endpoint through TF_VAR_model_backend_endpoint."
+  description = "Single client-facing alias name shared by all registered gateway models."
   default     = null
-  sensitive   = true
   validation {
-    condition     = var.model_backend_endpoint == null ? true : can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_backend_endpoint))
-    error_message = "Supply the service-returned HTTPS account origin."
+    condition     = var.model_alias == null || can(regex("^[a-zA-Z0-9_.-]+$", var.model_alias))
+    error_message = "Alias names may contain only alphanumeric, underscore, period and hyphen characters."
   }
 }
 
@@ -121,8 +101,88 @@ variable "model_callers" {
   default     = {}
   nullable    = false
   validation {
-    condition     = alltrue([for principal_id in values(var.model_callers) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))]) && (length(var.model_callers) == 0 || var.model_backend != null)
-    error_message = "Supply actual principal UUIDs under explicit stable keys; an alias/backend must be configured before caller grants."
+    condition     = alltrue([for principal_id in values(var.model_callers) : can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", principal_id))]) && (length(var.model_callers) == 0 || length(var.models) > 0)
+    error_message = "Supply actual principal UUIDs under explicit stable keys; models and an alias must be configured before caller grants."
+  }
+}
+
+variable "model_provider" {
+  type = object({
+    account_id    = string
+    provider_name = string
+  })
+  description = "Shared Foundry account and provider registration for all gateway models."
+  default     = null
+  validation {
+    condition = var.model_provider == null ? true : (
+      can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.CognitiveServices/accounts/[^/]+$", var.model_provider.account_id)) &&
+      can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.model_provider.provider_name))
+    )
+    error_message = "Supply a valid Foundry account ARM ID and provider name."
+  }
+}
+
+variable "model_provider_endpoint" {
+  type        = string
+  description = "Sensitive actual Foundry account endpoint; required with models and supplied separately from the shared account/provider identifiers."
+  default     = null
+  sensitive   = true
+  validation {
+    condition     = var.model_provider_endpoint == null || can(regex("^https://[a-zA-Z0-9.-]+/?$", var.model_provider_endpoint))
+    error_message = "Supply the service-returned HTTPS account origin."
+  }
+}
+
+variable "models" {
+  type = map(object({
+    deployment_id       = string
+    model_version       = string
+    model_name          = string
+    selector_model_name = optional(string)
+    supported_endpoints = optional(set(string), ["/openai/v1/responses"])
+    priority            = optional(number, 0)
+    weight              = optional(number, 100)
+  }))
+  description = "All gateway model registrations keyed by stable Terraform labels; each deployment uses the shared Foundry account/provider."
+  default     = {}
+  nullable    = false
+  validation {
+    condition = length(var.models) == 0 ? (
+      var.model_provider == null && var.model_alias == null && var.model_provider_endpoint == null
+      ) : (
+      var.model_provider != null && var.model_alias != null && var.model_provider_endpoint != null &&
+      alltrue([
+        for key, model in var.models :
+        can(regex("^[a-z][a-z0-9_]*$", key)) &&
+        startswith(lower(model.deployment_id), "${lower(var.model_provider.account_id)}/deployments/") &&
+        can(regex("(?i)^/subscriptions/[0-9a-f-]{36}/resourceGroups/[^/]+/providers/Microsoft\\.CognitiveServices/accounts/[^/]+/deployments/[^/]+$", model.deployment_id)) &&
+        can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", model.model_name)) &&
+        can(regex("^20[0-9]{2}-[0-9]{2}-[0-9]{2}$", model.model_version)) &&
+        (model.selector_model_name == null ? true : can(regex("^[a-zA-Z0-9][a-zA-Z0-9._-]*$", model.selector_model_name))) &&
+        length(model.supported_endpoints) > 0 &&
+        length(setsubtract(model.supported_endpoints, toset(["/openai/v1/responses", "/openai/v1/chat/completions"]))) == 0 &&
+        model.priority >= 0 &&
+        floor(model.priority) == model.priority &&
+        model.weight >= 1 &&
+        model.weight <= 100 &&
+        floor(model.weight) == model.weight
+      ]) &&
+      length(toset([for model in values(var.models) : lower(model.model_name)])) == length(var.models) &&
+      length(toset([for model in values(var.models) : lower(model.deployment_id)])) == length(var.models)
+    )
+    error_message = "Models require stable valid keys, unique model names and deployments, deployments in the shared Foundry account, verified endpoint paths, valid dated versions/selectors, nonnegative integer priorities, and integer weights from 1 to 100; configure the shared provider, endpoint, and alias together."
+  }
+  validation {
+    condition = var.auto_model_selection == null ? true : (
+      length(var.models) >= 2 &&
+      alltrue([
+        for model in values(var.models) :
+        contains(model.supported_endpoints, "/openai/v1/chat/completions") &&
+        try(length(trimspace(model.selector_model_name)) > 0, false)
+      ]) &&
+      length(toset([for model in values(var.models) : try(lower(model.selector_model_name), "")])) == length(var.models)
+    )
+    error_message = "Auto selection requires at least two models with explicitly verified native Chat Completions support and unique nonempty selector model names, providing a common API for the MAF OpenAIChatClient. Supply supported_endpoints explicitly; enabling auto selection does not infer model capabilities."
   }
 }
 

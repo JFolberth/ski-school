@@ -4,6 +4,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 WORKDIR /opt/ski-school/backend
 COPY requirements.txt .
+ARG PIP_INDEX_URL
+ARG PIP_TRUSTED_HOST
 RUN python -m pip install --no-cache-dir --require-hashes -r requirements.txt \
     && python -m pip check \
     && groupadd --gid 10001 backend \

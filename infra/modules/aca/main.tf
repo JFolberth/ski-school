@@ -131,6 +131,11 @@ resource "azapi_resource" "container_app" {
   # Azure normalizes ingress transport casing; this affects all body strings.
   ignore_casing = true
 
+  identity {
+    type         = "SystemAssigned, UserAssigned"
+    identity_ids = [azapi_resource.image_pull_identity.id]
+  }
+
   response_export_values = [
     "identity.principalId",
     "properties.configuration.ingress.fqdn",
@@ -157,12 +162,6 @@ resource "azapi_resource" "container_app" {
   }
 
   body = {
-    identity = {
-      type = "SystemAssigned, UserAssigned"
-      userAssignedIdentities = {
-        (azapi_resource.image_pull_identity.id) = {}
-      }
-    }
     properties = {
       configuration = {
         activeRevisionsMode = "Single"
@@ -341,14 +340,14 @@ resource "azapi_resource" "container_app" {
 
 resource "azapi_resource" "foundry_agent_consumer" {
   type      = "Microsoft.Authorization/roleAssignments@2022-04-01"
-  name      = uuidv5("dns", "${var.foundry_agent_resource_id}/${azapi_resource.container_app.output.identity.principalId}/agent-consumer")
+  name      = uuidv5("dns", "${var.foundry_agent_resource_id}/${azapi_resource.container_app.identity[0].principal_id}/agent-consumer")
   parent_id = var.foundry_agent_resource_id
 
   # Agent-scope assignments are evaluated for this agent's endpoint only.
   # https://learn.microsoft.com/azure/foundry/concepts/rbac-foundry#agent-scope-role-assignments
   body = {
     properties = {
-      principalId   = azapi_resource.container_app.output.identity.principalId
+      principalId   = azapi_resource.container_app.identity[0].principal_id
       principalType = "ServicePrincipal"
       # Foundry Agent Consumer
       roleDefinitionId = "${join("/", slice(split("/", var.foundry_agent_resource_id), 0, 3))}/providers/Microsoft.Authorization/roleDefinitions/eed3b665-ab3a-47b6-8f48-c9382fb1dad6"

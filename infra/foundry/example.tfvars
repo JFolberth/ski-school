@@ -1,6 +1,5 @@
 # Copy to an ignored root-local dev.tfvar and select explicitly with -var-file=dev.tfvar.
-# Supply subscription_id, tenant_id, workspace_id, model_capacity and model_version.
-# Candidate model version: 2026-03-17; target support/quota remain unverified.
+# Supply subscription_id, tenant_id, workspace_id, and each selected model's capacity and version.
 account_sku_name = "S0"
 application_insights = {
   application_type    = "web"
@@ -14,13 +13,25 @@ environment                           = "dev"
 # Later stage: stable gateway labels -> actual gateway system principal UUIDs.
 # Select only one upstream role for a given principal.
 gateway_foundry_user_principals = {}
+gateway_model_key               = "gpt_5_4_mini"
 gateway_principals              = {}
 location                        = "northcentralus"
-# Optional override; otherwise the deployment name is derived from base_name, environment, and region.
-# model_deployment_name = "gpt-5-4-mini-ski-foundry-dev-ncus"
-model_name                   = "gpt-5.4-mini"
-model_sku_name               = "GlobalStandard"
-model_version_upgrade_option = "NoAutoUpgrade"
+# Verify each example model/version and capacity against the target before use.
+models = {
+  gpt_5_4_mini = {
+    capacity      = 10
+    model_name    = "gpt-5.4-mini"
+    model_version = "2026-03-17"
+    # Optional deployment_name; otherwise derived from model_name and the root suffix.
+    sku_name               = "GlobalStandard"
+    version_upgrade_option = "NoAutoUpgrade"
+  }
+  gpt_5_6_sol = {
+    capacity      = 10
+    model_name    = "gpt-5.6-sol"
+    model_version = "2026-07-09"
+  }
+}
 # Set a Monitor workspace ID when enabled; null when native OTLP is deferred.
 # monitor_workspace_id = "<actual Azure Monitor workspace ARM ID>"
 native_otlp_enabled = true

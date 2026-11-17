@@ -13,6 +13,11 @@ output "account_principal_id" {
   value       = module.account.principal_id
 }
 
+output "additional_model_deployment_ids" {
+  description = "Account-level model deployment ARM IDs other than the explicitly selected singular handoff, keyed by their stable input labels."
+  value       = { for key, deployment in module.model : key => deployment.id if key != var.gateway_model_key }
+}
+
 output "application_insights_connection_id" {
   description = "Private project telemetry destination metadata association, null when deferred. No connection string is exposed."
   value       = var.project_telemetry_connection_enabled ? module.project_telemetry_connection[0].id : null
@@ -29,18 +34,18 @@ output "application_insights_otlp" {
 }
 
 output "gateway_backend" {
-  description = "Minimal non-secret gateway root model_backend handoff; configure upstream identity authorization separately in this root."
+  description = "Minimal non-secret gateway root model_backend handoff for gateway_model_key; configure upstream identity authorization separately in this root."
   value = {
     account_id    = module.account.id
-    deployment_id = module.model.id
+    deployment_id = module.model[var.gateway_model_key].id
     endpoint      = module.account.endpoint
-    model_version = module.model.model_version
+    model_version = module.model[var.gateway_model_key].model_version
   }
 }
 
 output "model_deployment_id" {
-  description = "Account-level model deployment ARM ID; no direct project route is configured."
-  value       = module.model.id
+  description = "Account-level model deployment ARM ID selected by gateway_model_key; no direct project route is configured."
+  value       = module.model[var.gateway_model_key].id
 }
 
 output "project_acr_connection_id" {

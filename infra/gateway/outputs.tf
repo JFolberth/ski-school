@@ -25,13 +25,18 @@ output "gateway_principal_id" {
 }
 
 output "model_alias_id" {
-  description = "Alias ARM ID and caller authorization scope, null until model_backend is explicitly configured."
+  description = "Alias ARM ID and caller authorization scope, null until the shared provider, alias, and model map are configured."
   value       = try(module.model_alias["primary"].id, null)
 }
 
 output "model_alias_name" {
   description = "Managed client-facing alias name; a Foundry project model connection still needs a verified contract."
   value       = try(module.model_alias["primary"].name, null)
+}
+
+output "model_ids" {
+  description = "Gateway backend-model ARM IDs keyed by the stable labels in the models input."
+  value       = { for key, model in module.model : key => model.id }
 }
 
 output "resource_group_id" {
