@@ -1,0 +1,85 @@
+name: Publish shared Terraform modules
+
+on:
+  workflow_call:
+    inputs:
+      retention-days:
+        type: number
+        default: 7
+    outputs:
+      artifact-id:
+        description: Immutable modules artifact shared by all roots in this run.
+        value: ${{ jobs.publish.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 digest of the shared modules archive.
+        value: ${{ jobs.publish.outputs.artifact-digest }}
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Stage tracked module sources
+        id: source
+        run: |
+          set -euo pipefail
+          directory=$(mktemp -d "$RUNNER_TEMP/terraform-modules.XXXXXX")
+          trap 'rm -rf -- "$directory"' ERR
+          export MODULES_DIRECTORY="$directory"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
+
+          root = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          destination = Path(os.environ["MODULES_DIRECTORY"])
+          if subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip() != os.environ["GITHUB_SHA"]:
+              raise SystemExit("Modules checkout does not match the triggering revision.")
+          tracked = subprocess.check_output(["git", "ls-files", "-z", "infra/modules"], cwd=root).decode().split("\0")
+          files = sorted(path for path in tracked if path.endswith(".tf"))
+          if not files:
+              raise SystemExit("No tracked Terraform modules found.")
+          for path in files:
+              source = root / path
+              if source.resolve() != source or not source.is_file():
+                  raise SystemExit("Modules must be regular repository files without symlinks.")
+              target = destination / path
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(source, target)
+          provenance = {key: os.environ[value] for key, value in {
+              "repository": "GITHUB_REPOSITORY", "sha": "GITHUB_SHA",
+              "run_id": "GITHUB_RUN_ID", "run_attempt": "GITHUB_RUN_ATTEMPT",
+          }.items()}
+          provenance["files"] = files
+          (destination / "modules-provenance.json").write_text(json.dumps(provenance, sort_keys=True) + "\n")
+          PY
+          echo "directory=$directory" >> "$GITHUB_OUTPUT"
+      - name: Publish modules once for this orchestration
+        id: upload
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: terraform-modules-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.source.outputs.directory }}
+          retention-days: ${{ inputs.retention-days }}
+      - name: Remove staged modules
+        if: ${{ always() && steps.source.outputs.directory != '' }}
+        env:
+          DIRECTORY: ${{ steps.source.outputs.directory }}
+        run: |
+          if [[ -L "$DIRECTORY" || "${DIRECTORY##*/}" != terraform-modules.* ||
+            "$(dirname -- "$DIRECTORY")" != "$(realpath -e -- "$RUNNER_TEMP")" ]]; then
+            echo "::error::Refusing cleanup outside the owned modules directory."
+            exit 1
+          fi
+          rm -rf -- "$DIRECTORY"

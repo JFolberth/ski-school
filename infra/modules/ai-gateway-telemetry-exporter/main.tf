@@ -33,6 +33,6 @@ resource "azapi_resource" "this" {
       }
     }
   }
-  # Azure may echo endpoints in GET responses; never store them as raw output.
+  # Do not export raw service responses; the root output exposes configured input URLs separately.
   response_export_values = []
 }

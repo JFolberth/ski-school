@@ -1,0 +1,61 @@
+name: AI Gateway CI/CD
+
+on:
+  pull_request:
+    branches: [main]
+    paths: &gateway-paths
+      - infra/gateway/**
+      - infra/modules/**
+  push:
+    branches: [main]
+    paths: *gateway-paths
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Path-filtered workflows must not be unconditional required checks for all PRs.
+jobs:
+  modules:
+    name: Shared Terraform modules
+    uses: ./.github/workflows/reusable-terraform-modules.yml
+
+  ci:
+    name: Gateway Terraform CI
+    needs: modules
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-plan.yml
+    with:
+      terraform-root: infra/gateway
+      module-path: infra/modules
+      state-key: ski-school-gateway.tfstate
+      artifact-prefix: gateway-ci
+      require-session-signing-key: false
+      deployment-source: true
+      modules-artifact-id: ${{ needs.modules.outputs.artifact-id }}
+      modules-artifact-digest: ${{ needs.modules.outputs.artifact-digest }}
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
+
+  cd:
+    name: Gateway Terraform CD
+    needs: [modules, ci]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.ci.outputs.deployment-artifact-id }}
+      artifact-digest: ${{ needs.ci.outputs.deployment-artifact-digest }}
+      modules-artifact-id: ${{ needs.modules.outputs.artifact-id }}
+      modules-artifact-digest: ${{ needs.modules.outputs.artifact-digest }}
+      environments: ${{ needs.ci.outputs.deployment-environments }}
+      state-key: ski-school-gateway.tfstate
