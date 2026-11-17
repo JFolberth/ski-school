@@ -106,65 +106,6 @@ jobs:
           ' <<< "$ENVIRONMENTS")
           echo "environments=$environments" >> "$GITHUB_OUTPUT"
 
-  validate:
-    name: Validate Terraform without Azure access
-    needs: configure
-    if: >-
-      ${{ !((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' &&
-      !endsWith(github.actor, '[bot]') &&
-      github.event.pull_request.user.type != 'Bot' &&
-      github.event.pull_request.head.repo.full_name == github.repository)) }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      TERRAFORM_ARTIFACT_SUFFIX: validation
-    steps:
-      - &checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - &setup-terraform
-        uses: hashicorp/setup-terraform@v4
-        with:
-          terraform_version: 1.15.5
-          terraform_wrapper: false
-      - &terraform-validate
-        name: Check formatting and validate without backend access
-        uses: ./.github/actions/terraform-validate
-        with:
-          terraform-root: ${{ inputs.terraform-root }}
-      - &terraform-source
-        name: Publish Terraform source artifact
-        if: ${{ !inputs.deployment-source }}
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ env.TERRAFORM_ARTIFACT_SUFFIX }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ inputs.terraform-root }}/*.tf
-            ${{ inputs.terraform-root }}/.terraform.lock.hcl
-            ${{ inputs.modules-artifact-id == '' && format('{0}/**/*.tf', inputs.module-path) || '' }}
-          retention-days: ${{ inputs.retention-days }}
-          include-hidden-files: "true"
-      - &deployment-source
-        name: Publish root source bound to shared modules
-        id: source
-        if: ${{ inputs.deployment-source }}
-        uses: ./.github/actions/terraform-source-artifact
-        with:
-          terraform-root: ${{ inputs.terraform-root }}
-          modules-artifact-id: ${{ inputs.modules-artifact-id }}
-          modules-artifact-digest: ${{ inputs.modules-artifact-digest }}
-          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
-          state-key: ${{ inputs.state-key }}
-          environments: ${{ needs.configure.outputs.environments }}
-          retention-days: ${{ inputs.retention-days }}
-      - name: Report planning eligibility
-        run: |
-          echo "Terraform plan: not eligible (untrusted event, fork, or bot PR). Only backend-free validation was performed." >> "$GITHUB_STEP_SUMMARY"
-
   plan:
     name: Validate and plan infrastructure (${{ matrix.environment.name }})
     needs: configure
@@ -199,10 +140,28 @@ jobs:
       AZAPI_LOG_SENSITIVE_DATA: "false"
       AZURE_CORE_OUTPUT: none
     steps:
-      - *checkout
-      - *setup-terraform
-      - *terraform-validate
-      - *terraform-source
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - name: Check formatting and validate without backend access
+        uses: ./.github/actions/terraform-validate
+        with:
+          terraform-root: ${{ inputs.terraform-root }}
+      - name: Publish Terraform source artifact
+        if: ${{ !inputs.deployment-source }}
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ env.TERRAFORM_ARTIFACT_SUFFIX }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ inputs.terraform-root }}/*.tf
+            ${{ inputs.terraform-root }}/.terraform.lock.hcl
+            ${{ inputs.modules-artifact-id == '' && format('{0}/**/*.tf', inputs.module-path) || '' }}
+          retention-days: ${{ inputs.retention-days }}
+          include-hidden-files: "true"
       - uses: Azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
@@ -238,7 +197,17 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - *deployment-source
+      - name: Publish root source bound to shared modules
+        id: source
+        uses: ./.github/actions/terraform-source-artifact
+        with:
+          terraform-root: ${{ inputs.terraform-root }}
+          modules-artifact-id: ${{ inputs.modules-artifact-id }}
+          modules-artifact-digest: ${{ inputs.modules-artifact-digest }}
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          state-key: ${{ inputs.state-key }}
+          environments: ${{ needs.configure.outputs.environments }}
+          retention-days: ${{ inputs.retention-days }}
       - name: Expose deployment artifact only for main
         id: deployment
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
