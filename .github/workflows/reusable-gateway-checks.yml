@@ -2,6 +2,12 @@ name: Reusable gateway checks and source
 
 on:
   workflow_call:
+    inputs:
+      environments:
+        description: Environment targets shared by source publication and Terraform checks.
+        type: string
+        default: >-
+          [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
     outputs:
       artifact-id:
         description: Immutable root source artifact from successful checks in this run.
@@ -29,6 +35,7 @@ jobs:
 
   checks:
     name: Gateway Terraform checks
+    needs: source
     permissions:
       contents: read
       id-token: write
@@ -40,19 +47,17 @@ jobs:
       artifact-prefix: gateway-ci
       require-session-signing-key: false
       publish-source: false
-      environments: >-
-        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
+      environments: ${{ inputs.environments }}
 
   source:
-    name: Publish verified gateway source
-    needs: [modules, checks]
+    name: Publish gateway source
+    needs: modules
     if: >-
-      ${{ needs.checks.result == 'success' &&
-      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
       !endsWith(github.actor, '[bot]') &&
       github.event.pull_request.user.type != 'Bot' &&
-      github.event.pull_request.head.repo.full_name == github.repository)) }}
+      github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -72,4 +77,4 @@ jobs:
           modules-artifact-digest: ${{ needs.modules.outputs.artifact-digest }}
           name: gateway-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
           state-key: ski-school-gateway.tfstate
-          environments: ${{ needs.checks.outputs.environments }}
+          environments: ${{ inputs.environments }}
