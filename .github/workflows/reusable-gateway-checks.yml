@@ -1,0 +1,76 @@
+name: Reusable gateway checks and source
+
+on:
+  workflow_call:
+    outputs:
+      artifact-id:
+        description: Immutable root source artifact from successful checks in this run.
+        value: ${{ jobs.source.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 digest of the root source archive.
+        value: ${{ jobs.source.outputs.artifact-digest }}
+      modules-artifact-id:
+        description: Immutable shared modules artifact from this run.
+        value: ${{ jobs.modules.outputs.artifact-id }}
+      modules-artifact-digest:
+        description: SHA-256 digest of the shared modules archive.
+        value: ${{ jobs.modules.outputs.artifact-digest }}
+      environments:
+        description: Validated environment and backend manifest used by every check.
+        value: ${{ jobs.checks.outputs.environments }}
+
+permissions:
+  contents: read
+
+jobs:
+  modules:
+    name: Shared Terraform modules
+    uses: ./.github/workflows/reusable-terraform-modules.yml
+
+  checks:
+    name: Gateway Terraform checks
+    needs: modules
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-plan.yml
+    with:
+      terraform-root: infra/gateway
+      module-path: infra/modules
+      state-key: ski-school-gateway.tfstate
+      artifact-prefix: gateway-ci
+      require-session-signing-key: false
+      publish-source: false
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
+
+  source:
+    name: Publish verified gateway source
+    needs: [modules, checks]
+    if: >-
+      ${{ needs.checks.result == 'success' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.source.outputs.artifact-id }}
+      artifact-digest: ${{ steps.source.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Publish root source bound to shared modules
+        id: source
+        uses: ./.github/actions/terraform-source-artifact
+        with:
+          terraform-root: infra/gateway
+          modules-artifact-id: ${{ needs.modules.outputs.artifact-id }}
+          modules-artifact-digest: ${{ needs.modules.outputs.artifact-digest }}
+          name: gateway-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          state-key: ski-school-gateway.tfstate
+          environments: ${{ needs.checks.outputs.environments }}
