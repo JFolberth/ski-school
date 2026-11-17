@@ -96,6 +96,33 @@ runs:
           echo "::error::Cannot read the private saved plan."
           exit 1
         fi
+        if ! jq -r --arg root "$TF_ROOT" --arg environment "$TARGET_ENVIRONMENT" '
+          def markdown:
+            @html | gsub("\\|"; "&#124;") | gsub("`"; "&#96;") |
+            gsub("\r"; "&#13;") | gsub("\n"; "&#10;");
+          [.resource_changes[]? | select(.change.actions != ["no-op"])] as $changes |
+          [$changes[] | select(.mode == "managed")] as $managed |
+          [
+            "",
+            "### Terraform plan: \($root | markdown) / \($environment | markdown)",
+            "",
+            "Plan: \([$managed[] | select(.change.actions | index("create"))] | length) to add, " +
+              "\([$managed[] | select(.change.actions | index("update"))] | length) to change, " +
+              "\([$managed[] | select(.change.actions | index("delete"))] | length) to destroy.",
+            "",
+            "Replacements count as both add and destroy. Attribute values and outputs are omitted.",
+            "",
+            (if $changes | length == 0 then "No resource changes." else
+              "| Resource | Actions |", "| --- | --- |",
+              ($changes[] | "| \(.address | markdown) | \(.change.actions | join(" -> ") | markdown) |")
+            end),
+            ""
+          ] | join("\n")
+          ' "$DIRECTORY/plan.json" > "$DIRECTORY/summary.md" 2> "$DIRECTORY/summary.log"; then
+          echo "::error::Cannot generate the sanitized Terraform plan summary."
+          exit 1
+        fi
+        cat "$DIRECTORY/summary.md" >> "$GITHUB_STEP_SUMMARY"
         if ! jq -e '
           ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
           ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
