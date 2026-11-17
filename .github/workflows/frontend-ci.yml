@@ -34,6 +34,6 @@ jobs:
       id-token: write
     uses: ./.github/workflows/reusable-terraform-plan.yml
     with:
-      state-key: frontend.tfstate
+      state-key: ski-school-frontend.tfstate
     secrets:
       FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
