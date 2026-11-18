@@ -12,7 +12,7 @@ narrowest supported scope. Documentation changes do not grant or remove access.
 
 | Azure role | Purpose and scope | Requirement / status |
 | --- | --- | --- |
-| Contributor | Manage deployment resources at the target resource-group scopes, with access to referenced resources as needed. Creating resource groups also requires permission at subscription scope. Does not grant role-assignment management or blob data access. | Reported configured. Deployment permission; the current workflow only validates and plans, not applies. |
+| Contributor | Manage deployment resources at the target resource-group scopes, with access to referenced resources as needed. Creating resource groups also requires permission at subscription scope. Does not grant role-assignment management or blob data access. | Reported configured. Deployment permission for the gateway and logging CD workflows; frontend CI currently only validates and plans. |
 | User Access Administrator | Create and manage Terraform-owned role assignments at their target scopes, including the registry and Foundry agent. Contributor alone cannot create these assignments. | Reported configured. Needed for applying role assignments, not for granting runtime access to the deployment identity itself. |
 | AcrPush | Push and pull images using legacy RBAC registry permissions. Scope to the registry. ABAC-enabled registries instead use Container Registry Repository Writer, optionally restricted to specific repositories. | Reported configured. Required when publishing images to ACR, but not used by the current CI image builds, which upload GitHub artifacts instead. |
 | Foundry User | Build and test agents through Foundry project data-plane APIs. Scope to the relevant project, with parent-resource read access where required. | Reported configured. Not required by the current frontend Terraform plan or local image builds. Does not by itself authorize agent publication. |
@@ -23,6 +23,13 @@ narrowest supported scope. Documentation changes do not grant or remove access.
 The Azure federated credential must trust that GitHub Environment (`dev`
 initially), and the plan job needs GitHub `id-token: write`. Federation permits
 sign-in; Azure RBAC separately determines resource access.
+
+The logging CI/CD workflow uses the same `dev` GitHub Environment and OIDC
+identity as the existing Terraform workflows. Its remote state uses the
+environment-neutral `ski-school-logging.tfstate` key in each environment's
+isolated state account. Migrate the existing logging state to that key before
+deployment; the logging plan and deploy steps verify the root's existing
+resource addresses and stop when the selected state is empty or incomplete.
 
 ## Separate workload identities
 

@@ -1,0 +1,24 @@
+name: Logging CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - infra/logging/**
+      - infra/modules/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: logging-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Path-filtered workflows must not be unconditional required checks for all PRs.
+jobs:
+  checks:
+    name: Logging checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-logging-checks.yml

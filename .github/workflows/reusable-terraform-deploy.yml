@@ -22,6 +22,14 @@ on:
       artifact-prefix:
         type: string
         default: gateway-ci
+      terraform-root:
+        description: Repository-relative root included in the immutable source artifact.
+        type: string
+        default: infra/gateway
+      require-existing-state:
+        description: Require known root resources to exist in the selected remote state before applying.
+        type: boolean
+        default: false
       environments:
         description: Full verified target manifest exposed by successful main CI.
         type: string
@@ -39,7 +47,7 @@ env:
 
 jobs:
   deploy:
-    name: Apply verified gateway source (${{ matrix.environment.name }})
+    name: Apply verified Terraform source (${{ matrix.environment.name }})
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -76,10 +84,11 @@ jobs:
           MODULES_ARTIFACT_ID: ${{ inputs.modules-artifact-id }}
           MODULES_ARTIFACT_DIGEST: ${{ inputs.modules-artifact-digest }}
           STATE_KEY: ${{ inputs.state-key }}
+          TERRAFORM_ROOT: ${{ inputs.terraform-root }}
           ENVIRONMENTS: ${{ inputs.environments }}
         run: |
           set -euo pipefail
-          directory=$(mktemp -d "$RUNNER_TEMP/gateway-download.XXXXXX")
+          directory=$(mktemp -d "$RUNNER_TEMP/terraform-download.XXXXXX")
           trap 'rm -rf -- "$directory"' EXIT
           export GH_HOST="${GITHUB_SERVER_URL#https://}"
           for kind in source modules; do
@@ -109,6 +118,7 @@ jobs:
           import json
           import os
           from pathlib import Path, PurePosixPath
+          import re
           import stat
           from zipfile import ZipFile
 
@@ -116,15 +126,21 @@ jobs:
           if any(workspace.iterdir()):
               raise SystemExit("Artifact-only deployment requires an empty workspace.")
           environments = json.loads(os.environ["ENVIRONMENTS"])
+          terraform_root = PurePosixPath(os.environ["TERRAFORM_ROOT"])
+          if (terraform_root.is_absolute() or ".." in terraform_root.parts
+                  or terraform_root.as_posix() in ("", ".")
+                  or terraform_root.as_posix() != os.environ["TERRAFORM_ROOT"]
+                  or not re.fullmatch(r"infra/[a-z0-9-]+", terraform_root.as_posix())):
+              raise SystemExit("Deployment root must be a canonical supported repository-relative path.")
           actions = {
               f".github/actions/{name}/action.yml"
               for name in ("terraform-fmt", "terraform-validate", "terraform-plan-artifact")
           }
           required = actions | {
-              "infra/gateway/main.tf",
-              "infra/gateway/.terraform.lock.hcl",
+              (terraform_root / "main.tf").as_posix(),
+              (terraform_root / ".terraform.lock.hcl").as_posix(),
               "provenance.json",
-          } | {f'infra/gateway/{target["name"]}.tfvars' for target in environments}
+          } | {(terraform_root / f'{target["name"]}.tfvars').as_posix() for target in environments}
           def allowed(name, kind):
               path = PurePosixPath(name)
               if kind == "modules":
@@ -133,7 +149,7 @@ jobs:
                   )
               return (
                   name in required
-                  or (str(path.parent) == "infra/gateway" and path.suffix == ".tf")
+                  or (path.parent == terraform_root and path.suffix == ".tf")
               )
           for kind in ("source", "modules"):
               manifest = "provenance.json" if kind == "source" else "modules-provenance.json"
@@ -171,7 +187,7 @@ jobs:
       - name: Validate artifact source
         uses: ./.github/actions/terraform-validate
         with:
-          terraform-root: infra/gateway
+          terraform-root: ${{ inputs.terraform-root }}
       - uses: Azure/login@v3
         with:
           client-id: ${{ env.ARM_CLIENT_ID }}
@@ -180,11 +196,12 @@ jobs:
       - name: Freshly plan and apply artifact source
         uses: ./.github/actions/terraform-plan-artifact
         with:
-          terraform-root: infra/gateway
+          terraform-root: ${{ inputs.terraform-root }}
           environment: ${{ matrix.environment.name }}
           state-account: ${{ matrix.environment.state_storage_account }}
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
           require-session-signing-key: "false"
+          require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
