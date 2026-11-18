@@ -106,6 +106,28 @@ variable "model_callers" {
   }
 }
 
+variable "mcp_endpoints" {
+  type = map(object({
+    backend_url    = string
+    token_audience = string
+  }))
+  description = "Streamable HTTP MCP backends keyed by stable gateway server name. Each backend must authorize the gateway's system-assigned identity. Do not include credentials in URLs."
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition = alltrue([
+      for name, endpoint in var.mcp_endpoints : try(
+        can(regex("^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?$", name)) &&
+        can(regex("^https://[a-zA-Z0-9.-]+(:[0-9]+)?(/[^?#[:space:]]*)?(\\?[^#[:space:]]+)?$", endpoint.backend_url)) &&
+        can(regex("^[^[:space:]]+$", endpoint.token_audience)),
+        false
+      )
+    ])
+    error_message = "Each MCP endpoint requires a lowercase gateway name (letters, digits, or interior hyphens, at most 64 characters), an HTTPS backend URL without user info or fragments, and a nonempty token audience without whitespace."
+  }
+}
+
 variable "model_provider" {
   type = object({
     account_id    = string

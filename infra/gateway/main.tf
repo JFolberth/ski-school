@@ -30,6 +30,15 @@ module "application_insights" {
   workspace_id        = var.workspace_id
 }
 
+module "mcp_endpoint" {
+  for_each       = var.mcp_endpoints
+  source         = "../modules/ai-gateway-mcp-endpoint"
+  backend_url    = each.value.backend_url
+  name           = each.key
+  token_audience = each.value.token_audience
+  workspace_id   = local.default_workspace_id
+}
+
 module "model_provider" {
   for_each     = local.alias_backends
   source       = "../modules/ai-gateway-model-provider"

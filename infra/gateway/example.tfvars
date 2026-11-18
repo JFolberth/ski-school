@@ -55,6 +55,15 @@ models = {}
 #     weight              = 50
 #   }
 # }
+# Each key names a gateway MCP server. Updating its backend URL keeps the caller URL stable.
+# The backend must authorize the gateway's managed identity; callers need separate gateway access.
+mcp_endpoints = {}
+# mcp_endpoints = {
+#   my-tools = {
+#     backend_url    = "https://tools.example.invalid/mcp?api-version=v1"
+#     token_audience = "api://my-tools"
+#   }
+# }
 monitor_workspace_id = null
 native_otlp_enabled  = false
 subscription_id      = "<workload-subscription-uuid>"
