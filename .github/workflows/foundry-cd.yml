@@ -1,0 +1,50 @@
+name: Foundry CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/foundry/**
+      - infra/modules/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundry-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Foundry checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/foundry
+      state-key: ski-school-foundry.tfstate
+      artifact-prefix: foundry-ci
+      require-existing-state: true
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-foundry-dev-ncus"}]
+
+  deploy:
+    name: Foundry Terraform CD
+    needs: checks
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.checks.result == 'success' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.checks.outputs.artifact-id }}
+      artifact-digest: ${{ needs.checks.outputs.artifact-digest }}
+      modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
+      environments: ${{ needs.checks.outputs.environments }}
+      terraform-root: infra/foundry
+      artifact-prefix: foundry-ci
+      state-key: ski-school-foundry.tfstate
+      require-existing-state: true

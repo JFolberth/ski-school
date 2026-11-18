@@ -72,13 +72,14 @@ jobs:
                 (.name | type == "string" and test("^[a-z]{3}$")) and
                 (.state_storage_account | type == "string" and test("^[a-z0-9]{3,24}$")) and
                 (.state_container | type == "string" and test("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$") and (contains("--") | not)) and
-                (if (env.TF_ROOT == "infra/gateway" or env.TF_ROOT == "infra/logging" or env.TF_ROOT == "infra/registry") then
+                (if (env.TF_ROOT == "infra/foundry" or env.TF_ROOT == "infra/gateway" or
+                     env.TF_ROOT == "infra/logging" or env.TF_ROOT == "infra/registry") then
                   (keys == ["expected_resource_group","name","state_container","state_storage_account"]) and
                   (.expected_resource_group | type == "string" and test("^[a-zA-Z0-9_-][a-zA-Z0-9_.()-]{0,89}$") and (endswith(".") | not))
                 else true end)) and
               ([.[].name] | length == (unique | length)) and
               ([.[].state_storage_account] | length == (unique | length))
-            then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for gateway/logging/registry.") end
+            then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for foundry/gateway/logging/registry.") end
           ' <<< "$ENVIRONMENTS")
           echo "environments=$environments" >> "$GITHUB_OUTPUT"
 

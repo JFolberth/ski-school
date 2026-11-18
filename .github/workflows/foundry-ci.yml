@@ -1,0 +1,31 @@
+name: Foundry CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - infra/foundry/**
+      - infra/modules/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundry-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Path-filtered workflows must not be unconditional required checks for all PRs.
+jobs:
+  checks:
+    name: Foundry checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/foundry
+      state-key: ski-school-foundry.tfstate
+      artifact-prefix: foundry-ci
+      require-existing-state: true
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-foundry-dev-ncus"}]
