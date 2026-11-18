@@ -22,7 +22,6 @@ concurrency:
 jobs:
   toolbox-source:
     name: Foundry toolbox source
-    needs: checks
     uses: ./.github/workflows/reusable-foundry-toolbox-source.yml
 
   checks:
