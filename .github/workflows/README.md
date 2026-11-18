@@ -52,11 +52,12 @@ still fails deployment.
 
 ### Dev backend delivery
 
-`backend-ci-cd.yml` builds and verifies the `linux/amd64` image for every
+`backend-ci.yml` builds and verifies the `linux/amd64` image for every
 matching PR. Same-repository human PRs also run a live Terraform plan: the plan
 uses the latest active Foundry version's ACR digest, not a PR image or a stale
-state output. Fork and bot PRs do not get Azure credentials. On `main`, the
-workflow verifies the tested image artifact, publishes it to `ski-backend`,
+state output. Fork and bot PRs do not get Azure credentials. On pushes to
+`main`, `backend-cd.yml` repeats the same checks and verifies the tested image
+artifact from that run, publishes it to `ski-backend`,
 then freshly plans the verified Terraform source using the exact registry
 digest and applies it if there are changes. It checks readiness and invokes a
 session pinned to the version recorded in Terraform state, even when apply is
