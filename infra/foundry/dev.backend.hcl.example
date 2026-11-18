@@ -1,8 +1,8 @@
-# Non-secret existing-backend coordinates only. No live initialization approved.
+# Non-secret existing-backend coordinates only.
 # Supply backend tenant_id and approved identity authentication separately.
-# Verify this key is available and belongs to foundry/dev before initialization.
+# Verify the migrated state exists and belongs to foundry/dev before initialization.
 container_name       = "tfstate"
-key                  = "foundry-dev.tfstate"
+key                  = "ski-school-foundry.tfstate"
 resource_group_name  = "rg-terraformstate-dev-swece"
 storage_account_name = "saterraformstatedevswece"
 subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"

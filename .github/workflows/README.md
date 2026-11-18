@@ -30,6 +30,19 @@ environment-neutral `ski-school-logging.tfstate` key in each environment's
 isolated state account. The workflows use the existing remote backend and do
 not fall back to local state.
 
+Foundry CI/CD uses the same `dev` GitHub Environment and OIDC identity. CI
+plans PR changes under `infra/foundry` or `infra/modules`; CD runs on matching
+pushes to `main` and deploys only after the reusable checks succeed. Both
+target `rg-ski-foundry-dev-ncus` using `infra/foundry/dev.tfvars` and require
+the existing `saterraformstatedevswece/tfstate/ski-school-foundry.tfstate` blob.
+Complete and verify the separate state migration before merging changes that
+trigger Foundry CD; the workflows neither migrate nor initialize empty state.
+
+The Foundry plan guard permits only the declared project image-pull role
+assignment outside the Foundry resource group, on the dev registry
+`crskiregistrydevncus`. The OIDC identity needs registry read access and
+role-assignment management at that registry scope to manage that grant.
+
 ## Separate workload identities
 
 Do not confuse roles held by the OIDC deployment identity with roles it assigns

@@ -142,6 +142,7 @@ runs:
           ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
           ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
           (.variables.telemetry_exporter.value.data_collection_rule_id // "" | ascii_downcase) as $dcr |
+          (.variables.project_acr_connection.value.registry_id // "" | ascii_downcase) as $acr |
           .errored != true and
           .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
           .variables.environment.value == env.TARGET_ENVIRONMENT and
@@ -159,7 +160,14 @@ runs:
                 (env.TF_ROOT == "infra/gateway" and
                   ($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
                   $parent == $dcr and
-                  $parent != "")
+                  $parent != "") or
+                # Foundry owns the project identity pull grant on the separately managed dev registry.
+                (env.TF_ROOT == "infra/foundry" and
+                  env.TARGET_ENVIRONMENT == "dev" and
+                  .address == "module.project_acr_image_pull[\"backend\"].azapi_resource.this" and
+                  ($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
+                  $parent == $acr and
+                  $parent == ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"))
               )
             )
           end)' "$DIRECTORY/plan.json" > /dev/null 2> "$DIRECTORY/guard.log"; then
