@@ -10,7 +10,7 @@ on:
         type: string
         default: infra/modules/aca
       environments:
-        description: JSON target objects with name, state_storage_account, state_container, and (for gateway) expected_resource_group.
+        description: JSON target objects with name, state_storage_account, state_container, and an expected_resource_group for gateway or logging.
         type: string
         default: >-
           [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate"}]
@@ -28,7 +28,7 @@ on:
         type: boolean
         default: true
       publish-source:
-        description: Upload root and module sources in each plan job; gateway orchestration publishes its own verified bundle.
+        description: Upload root and module sources in each plan job; orchestration workflows may publish a verified bundle separately.
         type: boolean
         default: true
     secrets:
@@ -68,13 +68,13 @@ jobs:
                 (.name | type == "string" and test("^[a-z]{3}$")) and
                 (.state_storage_account | type == "string" and test("^[a-z0-9]{3,24}$")) and
                 (.state_container | type == "string" and test("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$") and (contains("--") | not)) and
-                (if env.TF_ROOT == "infra/gateway" then
+                (if (env.TF_ROOT == "infra/gateway" or env.TF_ROOT == "infra/logging") then
                   (keys == ["expected_resource_group","name","state_container","state_storage_account"]) and
                   (.expected_resource_group | type == "string" and test("^[a-zA-Z0-9_-][a-zA-Z0-9_.()-]{0,89}$") and (endswith(".") | not))
                 else true end)) and
               ([.[].name] | length == (unique | length)) and
               ([.[].state_storage_account] | length == (unique | length))
-            then . else error("Require nonempty unique environments with isolated storage accounts and explicit gateway resource groups.") end
+            then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for gateway/logging.") end
           ' <<< "$ENVIRONMENTS")
           echo "environments=$environments" >> "$GITHUB_OUTPUT"
 

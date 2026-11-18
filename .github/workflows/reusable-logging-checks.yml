@@ -1,0 +1,76 @@
+name: Reusable logging checks and source
+
+on:
+  workflow_call:
+    inputs:
+      environments:
+        description: Logging environment targets shared by source publication and Terraform checks.
+        type: string
+        default: >-
+          [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-logs-dev-ncus"}]
+    outputs:
+      artifact-id:
+        description: Immutable root source artifact from successful checks in this run.
+        value: ${{ jobs.source.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 digest of the root source archive.
+        value: ${{ jobs.source.outputs.artifact-digest }}
+      modules-artifact-id:
+        description: Immutable shared modules artifact from this run.
+        value: ${{ jobs.modules.outputs.artifact-id }}
+      modules-artifact-digest:
+        description: SHA-256 digest of the shared modules archive.
+        value: ${{ jobs.modules.outputs.artifact-digest }}
+      environments:
+        description: Validated environment and backend manifest used by every check.
+        value: ${{ jobs.checks.outputs.environments }}
+
+permissions:
+  contents: read
+
+jobs:
+  modules:
+    name: Shared Terraform modules
+    uses: ./.github/workflows/reusable-terraform-modules.yml
+
+  checks:
+    name: Logging Terraform checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-plan.yml
+    with:
+      terraform-root: infra/logging
+      module-path: infra/modules
+      state-key: ski-school-logging.tfstate
+      artifact-prefix: logging-ci
+      require-session-signing-key: false
+      publish-source: false
+      environments: ${{ inputs.environments }}
+
+  source:
+    name: Publish logging source
+    if: >-
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.source.outputs.artifact-id }}
+      artifact-digest: ${{ steps.source.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Publish root source for this revision
+        id: source
+        uses: ./.github/actions/terraform-source-artifact
+        with:
+          terraform-root: infra/logging
+          name: logging-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          state-key: ski-school-logging.tfstate
+          environments: ${{ inputs.environments }}

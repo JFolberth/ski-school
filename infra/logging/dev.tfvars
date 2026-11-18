@@ -1,0 +1,12 @@
+# Non-secret dev configuration; select explicitly with -var-file=dev.tfvars.
+base_name                                 = "ski-logs"
+environment                               = "dev"
+location                                  = "northcentralus"
+monitor_workspace_location                = "eastus2"
+monitor_workspace_resource_context_access = true
+subscription_id                           = "9a7e9255-7824-4c0d-a414-366f436f61dd"
+tags                                      = {}
+tenant_id                                 = "5a4de383-e76f-4737-9623-e6281d36d202"
+workspace_location                        = "eastus2"
+workspace_retention_in_days               = 30
+workspace_sku_name                        = "PerGB2018"
