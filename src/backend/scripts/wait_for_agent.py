@@ -1,9 +1,49 @@
 import argparse
 import re
 import time
+from collections.abc import Callable
 from urllib.parse import quote, urlsplit
+
 import httpx
 from azure.identity import AzureCliCredential, get_bearer_token_provider
+
+
+def smoke_test(
+    client: httpx.Client, endpoint: str, version: str, token: Callable[[], str]
+) -> None:
+    # Pin a fresh session so a passing check cannot accidentally exercise the default version.
+    session = client.post(
+        f"{endpoint}/sessions?api-version=v1",
+        headers={"Authorization": f"Bearer {token()}"},
+        json={"version_indicator": {"type": "version_ref", "agent_version": version}},
+        timeout=120,
+    )
+    session.raise_for_status()
+    session_id = session.json().get("agent_session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise RuntimeError("Foundry did not return a pinned session ID.")
+    response = client.post(
+        f"{endpoint}/protocols/openai/responses?api-version=v1",
+        headers={"Authorization": f"Bearer {token()}"},
+        json={
+            "agent_session_id": session_id,
+            "input": "Name one ski resort in Michigan.",
+            "stream": False,
+        },
+        timeout=120,
+    )
+    response.raise_for_status()
+    result = response.json()
+    if result.get("status") != "completed" or not any(
+        part.get("type") == "output_text" and bool((part.get("text") or "").strip())
+        for item in result.get("output", [])
+        if item.get("type") == "message"
+        for part in item.get("content", [])
+    ):
+        raise RuntimeError("The pinned agent did not complete with a text response.")
+    print(f"Foundry smoke test passed for version {version}.")
+
+
 def positive_integer(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -11,7 +51,7 @@ def positive_integer(value: str) -> int:
     return number
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Read-only readiness check for one exact Foundry agent version and image."
+        description="Check one exact Foundry agent version and image, with optional invocation."
     )
     parser.add_argument("--project-endpoint", required=True)
     parser.add_argument("--agent-name", required=True)
@@ -19,6 +59,7 @@ def main() -> None:
     parser.add_argument("--expected-image", required=True)
     parser.add_argument("--timeout-seconds", type=positive_integer, default=600)
     parser.add_argument("--poll-interval-seconds", type=positive_integer, default=5)
+    parser.add_argument("--smoke-test", action="store_true", help="Invoke a session pinned to the checked version.")
     args = parser.parse_args()
     endpoint = urlsplit(args.project_endpoint)
     if (
@@ -37,10 +78,8 @@ def main() -> None:
         parser.error("--expected-image must be a full immutable registry image URI.")
     if not args.agent_name.strip():
         parser.error("--agent-name must not be empty.")
-    url = (
-        f"{args.project_endpoint.rstrip('/')}/agents/{quote(args.agent_name, safe='')}"
-        f"/versions/{args.agent_version}?api-version=v1"
-    )
+    agent_url = f"{args.project_endpoint.rstrip('/')}/agents/{quote(args.agent_name, safe='')}"
+    url = f"{agent_url}/versions/{args.agent_version}?api-version=v1"
     deadline = time.monotonic() + args.timeout_seconds
     with AzureCliCredential(process_timeout=min(10, args.timeout_seconds)) as credential:
         token = get_bearer_token_provider(credential, "https://ai.azure.com/.default")
@@ -64,10 +103,9 @@ def main() -> None:
                     raise RuntimeError("Candidate image differs from the expected immutable image.")
                 status = version.get("status")
                 if status == "active":
-                    print(
-                        f"Agent version {args.agent_version} is active with the expected image. "
-                        "Gateway inference, telemetry and guardrails still require verification."
-                    )
+                    print(f"Agent version {args.agent_version} is active with the expected image.")
+                    if args.smoke_test:
+                        smoke_test(client, f"{agent_url}/endpoint", args.agent_version, token)
                     return
                 if status != "creating":
                     raise RuntimeError(

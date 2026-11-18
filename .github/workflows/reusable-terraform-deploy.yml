@@ -37,6 +37,14 @@ on:
         description: Refuse deployment plans against a missing state blob.
         type: boolean
         default: false
+      backend-image-digest:
+        description: Immutable ACR digest from the backend image publication job.
+        type: string
+        default: ''
+    secrets:
+      BACKEND_GATEWAY_BASE_URL:
+        description: Reviewed gateway endpoint supplied by the backend release environment.
+        required: false
 
 permissions:
   contents: read
@@ -55,7 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         environment: ${{ fromJSON(inputs.environments) }}
-    environment: ${{ matrix.environment.name }}
+    environment: ${{ inputs.terraform-root == 'infra/backend' && format('backend-release-{0}', matrix.environment.name) || matrix.environment.name }}
     concurrency:
       group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
       cancel-in-progress: false
@@ -194,6 +202,7 @@ jobs:
           tenant-id: ${{ env.ARM_TENANT_ID }}
           subscription-id: ${{ env.ARM_SUBSCRIPTION_ID }}
       - name: Freshly plan and apply artifact source
+        id: apply
         uses: ./.github/actions/terraform-plan-artifact
         with:
           terraform-root: ${{ inputs.terraform-root }}
@@ -205,3 +214,33 @@ jobs:
           require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
+          backend-image-digest: ${{ inputs.backend-image-digest }}
+        env:
+          TF_VAR_gateway_base_url: ${{ inputs.terraform-root == 'infra/backend' && secrets.BACKEND_GATEWAY_BASE_URL || '' }}
+      - uses: actions/checkout@v7
+        if: inputs.terraform-root == 'infra/backend'
+        with:
+          ref: ${{ github.sha }}
+          path: release-checks
+          sparse-checkout: src/backend
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        if: inputs.terraform-root == 'infra/backend'
+        with:
+          python-version: '3.12'
+      - name: Verify the exact deployed backend version
+        if: inputs.terraform-root == 'infra/backend'
+        working-directory: release-checks/src/backend
+        env:
+          BACKEND_RELEASE: ${{ steps.apply.outputs.backend-release }}
+          PIP_INDEX_URL: https://packagefeedproxy.microsoft.io/pypi/simple/
+          PIP_TRUSTED_HOST: packagefeedproxy.microsoft.io
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --require-hashes -r requirements.txt
+          python scripts/wait_for_agent.py \
+            --project-endpoint "$(jq -er .endpoint <<< "$BACKEND_RELEASE")" \
+            --agent-name "$(jq -er .agent <<< "$BACKEND_RELEASE")" \
+            --agent-version "$(jq -er .version <<< "$BACKEND_RELEASE")" \
+            --expected-image "$(jq -er .image <<< "$BACKEND_RELEASE")" \
+            --smoke-test

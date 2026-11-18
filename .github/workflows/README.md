@@ -45,6 +45,53 @@ role-assignment management at that registry scope to manage that grant.
 
 ## Separate workload identities
 
+### Dev backend delivery
+
+`backend-ci-cd.yml` builds and verifies the `linux/amd64` image for every
+matching PR. Same-repository human PRs also run a live Terraform plan: the plan
+uses the latest active Foundry version's ACR digest, not a PR image or a stale
+state output. Fork and bot PRs do not get Azure credentials. On `main`, the
+workflow verifies the tested image artifact, publishes it to `ski-backend`,
+then freshly plans and applies the verified Terraform source using the exact
+registry digest. It checks readiness and invokes a session pinned to the
+resulting version. No Azure Container App or routing rules are changed. Foundry
+can route dev traffic to the latest version before the smoke check finishes
+when the endpoint uses its default selector.
+
+Before enabling delivery:
+
+1. Migrate `backend-dev.tfstate` to `ski-school-backend.tfstate` in the dev
+   `saterraformstatedevswece/tfstate` container. Pause all old-key writers,
+   back up state securely, verify the same lineage and resource inventory at
+   the destination, and retire the old key from all clients without deleting
+   its blob. After migration approval, use a fresh Terraform data directory to
+   initialize `infra/backend` against the old key, then rerun `terraform init
+   -migrate-state` using `infra/backend/dev.backend.hcl.example` for the
+   destination settings. Verify the destination before merging. The workflow
+   refuses a missing destination.
+2. Set up `backend-plan-dev` with a separate OIDC identity and restrict who
+   can approve PRs for Azure access. Configure `AZURE_CLIENT_ID`,
+   `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` for its environment-scoped
+   federated credential, and provide `BACKEND_GATEWAY_BASE_URL` as an
+   environment secret. Grant scoped state access (including the blob lease)
+   and read access to Foundry agents and the referenced role assignments;
+   do not grant ACR push or agent deployment permissions.
+3. Configure `backend-release-dev` for `main` only, with the same variable
+   names and gateway secret but a separate release identity. Configure
+   environment protection for live releases. This identity also needs ACR
+   push, Foundry agent write/invocation, and scoped role-assignment management
+   for the gateway alias and App Insights component. Review the dev routing
+   and release impact before setting `BACKEND_RELEASE_ENABLED=true` in this
+   environment.
+
+The state move does not resolve existing Foundry drift. If state and Foundry
+report different versions, review the first refreshed plan and keep the
+previous image/version available for rollback. See
+[Foundry hosted-agent permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions)
+and [hosted-agent routing](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-agent).
+
+### Frontend workload identities
+
 Do not confuse roles held by the OIDC deployment identity with roles it assigns
 to the deployed application. `infra/modules/aca/main.tf` currently manages:
 

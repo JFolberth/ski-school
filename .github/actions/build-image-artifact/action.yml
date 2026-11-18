@@ -3,7 +3,7 @@ description: Build, validate, and upload a Docker-loadable image archive.
 
 inputs:
   image-kind:
-    description: Image to build; must be frontend or bridge.
+    description: Image to build; must be frontend, bridge, or backend.
     required: true
   context:
     description: Repository-relative Docker build context.
@@ -31,6 +31,9 @@ outputs:
   artifact-id:
     description: ID of the uploaded image artifact.
     value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-digest:
+    description: SHA-256 digest of the image archive artifact.
+    value: ${{ steps.upload.outputs.artifact-digest }}
 
 runs:
   using: composite
@@ -45,8 +48,8 @@ runs:
         RUNNER_TEMP_PATH: ${{ runner.temp }}
       run: |
         set -euo pipefail
-        [[ "$IMAGE_KIND" == frontend || "$IMAGE_KIND" == bridge ]] || {
-          echo "::error::image-kind must be frontend or bridge."
+        [[ "$IMAGE_KIND" =~ ^(frontend|bridge|backend)$ ]] || {
+          echo "::error::image-kind must be frontend, bridge, or backend."
           exit 1
         }
         workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
@@ -60,7 +63,7 @@ runs:
         }
 
         runner_temp=$(realpath -e -- "$RUNNER_TEMP_PATH")
-        output_dir=$(mktemp -d "$runner_temp/frontend-image.XXXXXX")
+        output_dir=$(mktemp -d "$runner_temp/ci-image.XXXXXX")
         {
           printf 'context=%s\n' "$context"
           printf 'dockerfile=%s\n' "$dockerfile"
@@ -103,6 +106,12 @@ runs:
           docker run --rm --network none --entrypoint nginx "$IMAGE_TAG" -t
         else
           docker run --rm --network none "$IMAGE_TAG" python -I -m pip check
+        fi
+        if [[ "$IMAGE_KIND" == backend ]]; then
+          docker run --rm --network none \
+            -e AI_GATEWAY_BASE_URL=https://example.invalid/models/openai/v1/ \
+            -e AI_GATEWAY_MODEL_ALIAS=ci-smoke \
+            "$IMAGE_TAG" python -I -c 'import runpy; runpy.run_path("main.py")["create_server"]()'
         fi
 
     - name: Upload image archive

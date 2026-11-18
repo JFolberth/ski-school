@@ -10,7 +10,7 @@ on:
         type: string
         default: infra/modules/aca
       environments:
-        description: JSON target objects with name, state_storage_account, state_container, and an expected_resource_group for gateway, logging, or registry.
+        description: JSON targets containing environment, state coordinates, and the expected resource group for guarded roots.
         type: string
         default: >-
           [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate"}]
@@ -36,6 +36,9 @@ on:
         type: boolean
         default: true
     secrets:
+      BACKEND_GATEWAY_BASE_URL:
+        description: Reviewed gateway endpoint supplied by the backend plan environment.
+        required: false
       FRONTEND_SESSION_SIGNING_KEY:
         description: Existing ephemeral session key; required only for frontend plans.
         required: false
@@ -72,14 +75,14 @@ jobs:
                 (.name | type == "string" and test("^[a-z]{3}$")) and
                 (.state_storage_account | type == "string" and test("^[a-z0-9]{3,24}$")) and
                 (.state_container | type == "string" and test("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$") and (contains("--") | not)) and
-                (if (env.TF_ROOT == "infra/foundry" or env.TF_ROOT == "infra/gateway" or
+                (if (env.TF_ROOT == "infra/backend" or env.TF_ROOT == "infra/foundry" or env.TF_ROOT == "infra/gateway" or
                      env.TF_ROOT == "infra/logging" or env.TF_ROOT == "infra/registry") then
                   (keys == ["expected_resource_group","name","state_container","state_storage_account"]) and
                   (.expected_resource_group | type == "string" and test("^[a-zA-Z0-9_-][a-zA-Z0-9_.()-]{0,89}$") and (endswith(".") | not))
                 else true end)) and
               ([.[].name] | length == (unique | length)) and
               ([.[].state_storage_account] | length == (unique | length))
-            then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for foundry/gateway/logging/registry.") end
+            then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for guarded roots.") end
           ' <<< "$ENVIRONMENTS")
           echo "environments=$environments" >> "$GITHUB_OUTPUT"
 
@@ -101,7 +104,7 @@ jobs:
     concurrency:
       group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
       cancel-in-progress: false
-    environment: ${{ matrix.environment.name }}
+    environment: ${{ inputs.terraform-root == 'infra/backend' && format('backend-plan-{0}', matrix.environment.name) || matrix.environment.name }}
     permissions:
       contents: read
       id-token: write
@@ -157,3 +160,4 @@ jobs:
           expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
         env:
           TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
+          TF_VAR_gateway_base_url: ${{ inputs.terraform-root == 'infra/backend' && secrets.BACKEND_GATEWAY_BASE_URL || '' }}

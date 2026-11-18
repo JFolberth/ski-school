@@ -28,10 +28,18 @@ inputs:
   apply:
     description: Apply the guarded saved plan; allowed only on a main push.
     default: "false"
+  backend-image-digest:
+    description: Published backend image digest for apply; plan-only runs use the active Foundry baseline.
+    default: ""
+outputs:
+  backend-release:
+    description: Non-secret backend version, image and target metadata after apply.
+    value: ${{ steps.terraform.outputs.backend-release }}
 runs:
   using: composite
   steps:
     - name: Initialize, plan, verify, and optionally apply
+      id: terraform
       shell: bash
       env:
         TF_ROOT: ${{ inputs.terraform-root }}
@@ -43,6 +51,7 @@ runs:
         REQUIRE_EXISTING_STATE: ${{ inputs.require-existing-state }}
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
+        BACKEND_IMAGE_DIGEST: ${{ inputs.backend-image-digest }}
       run: |
         set -euo pipefail
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
@@ -102,6 +111,35 @@ runs:
           echo "::error::Remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
           exit 1
         fi
+        if [[ "$TF_ROOT" == infra/backend ]]; then
+          : "${TF_VAR_gateway_base_url:?Configure the backend gateway URL in the GitHub Environment}"
+          if [[ "$APPLY" == true ]]; then
+            export TF_VAR_container_image_digest="$BACKEND_IMAGE_DIGEST"
+          else
+            if ! state_image=$(terraform -chdir="$TF_ROOT" output -raw image_uri 2>"$DIRECTORY/output.log") ||
+              [[ ! "$state_image" =~ ^crskiregistrydevncus\.azurecr\.io/ski-backend@sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Backend state must contain the reviewed dev agent image output."
+              exit 1
+            fi
+            # State can lag Foundry after an out-of-band version publication.
+            agent_url=https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev
+            if ! version=$(az rest --method get --url "$agent_url?api-version=v1" --resource https://ai.azure.com \
+              --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
+              jq -er '.versions.latest.version | strings | select(test("^[1-9][0-9]*$"))') ||
+              ! baseline=$(az rest --method get --url "$agent_url/versions/$version?api-version=v1" --resource https://ai.azure.com \
+              --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
+              jq -er --arg version "$version" 'select(.status == "active" and .version == $version) | .definition.container_configuration.image | strings') ||
+              [[ ! "$baseline" =~ ^crskiregistrydevncus\.azurecr\.io/ski-backend@sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::The latest Foundry version must be active and use a published dev backend digest."
+              exit 1
+            fi
+            export TF_VAR_container_image_digest="${baseline##*@}"
+          fi
+          if [[ ! "$TF_VAR_container_image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Expected a published backend image digest."
+            exit 1
+          fi
+        fi
         if ! terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
           -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
           echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
@@ -139,6 +177,33 @@ runs:
           exit 1
         fi
         if ! jq -e '
+          def backend_target($subscription; $group):
+            "aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus" as $project |
+            ($subscription + "/resourcegroups/rg-ski-gateway-dev-eus2/providers/microsoft.apimanagement/aigateways/aig-ski-gateway-dev-eus2/workspaces/default/aliases/ski-assistant-dev") as $alias |
+            ($group + "/providers/microsoft.insights/components/appi-ski-foundry-dev-ncus") as $insights |
+            env.TARGET_ENVIRONMENT == "dev" and env.EXPECTED_RESOURCE_GROUP == "rg-ski-foundry-dev-ncus" and
+            .variables.project_endpoint.value == ("https://" + $project) and
+            .variables.agent_name.value == "ski-backend-dev" and
+            .variables.acr_login_server.value == "crskiregistrydevncus.azurecr.io" and
+            .variables.container_image_repository.value == "ski-backend" and
+            .variables.container_image_digest.value == env.TF_VAR_container_image_digest and
+            all(.resource_changes[]? | select(.mode == "managed");
+              (.change.actions | index("delete") | not) and
+              (.change.after as $after |
+                ($after.parent_id // "" | ascii_downcase) as $parent |
+                if .address == "module.agent.azapi_data_plane_resource.this" then
+                  $after.type == "Microsoft.Foundry/agents@v1" and
+                  $after.name == "ski-backend-dev" and $parent == $project
+                elif $after.type == "Microsoft.Authorization/roleAssignments@2022-04-01" then
+                  ($after.body | if type == "string" then fromjson else . end | .properties.roleDefinitionId | ascii_downcase) as $role |
+                  ($subscription + "/providers/microsoft.authorization/roledefinitions/") as $role_prefix |
+                  (.address == "module.agent_gateway_caller.azapi_resource.this" and $parent == $alias and
+                    $role == ($role_prefix + "a6b68e3d-a1f0-4c60-8678-237c050cf4ea")) or
+                  (.address == "module.agent_telemetry_publisher.azapi_resource.this" and $parent == $insights and
+                    $role == ($role_prefix + "3913510d-42f4-4e42-8a64-420c390055eb"))
+                else false end
+              )
+            );
           ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
           ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
           (.variables.telemetry_exporter.value.data_collection_rule_id // "" | ascii_downcase) as $dcr |
@@ -146,7 +211,9 @@ runs:
           .errored != true and
           .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
           .variables.environment.value == env.TARGET_ENVIRONMENT and
-          (if env.EXPECTED_RESOURCE_GROUP == "" then true else
+          (if env.TF_ROOT == "infra/backend" then
+            .variables.tenant_id.value == env.ARM_TENANT_ID and backend_target($subscription; $group)
+          elif env.EXPECTED_RESOURCE_GROUP == "" then true else
             .variables.tenant_id.value == env.ARM_TENANT_ID and
             (.planned_values.outputs.resource_group_id.value | ascii_downcase) == $group and
             all(.resource_changes[]? | select(.mode == "managed");
@@ -272,4 +339,17 @@ runs:
             exit 1
           fi
           echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
+          if [[ "$TF_ROOT" == infra/backend ]]; then
+            if ! release=$(terraform -chdir="$TF_ROOT" output -json 2>"$DIRECTORY/output.log" | jq -ce '
+              {agent: .agent_name.value, version: .candidate_version.value, image: .image_uri.value, endpoint: .project_endpoint.value} |
+              select(.agent == "ski-backend-dev" and
+                (.version | test("^[1-9][0-9]*$")) and
+                .image == ("crskiregistrydevncus.azurecr.io/ski-backend@" + env.TF_VAR_container_image_digest) and
+                .endpoint == "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus"
+              )'); then
+              echo "::error::Apply finished but did not return valid backend release metadata."
+              exit 1
+            fi
+            printf 'backend-release=%s\n' "$release" >> "$GITHUB_OUTPUT"
+          fi
         fi
