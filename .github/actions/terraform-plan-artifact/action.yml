@@ -258,6 +258,8 @@ runs:
           exit 1
         fi
         cat "$DIRECTORY/summary.md" "$DIRECTORY/detail.md" >> "$GITHUB_STEP_SUMMARY"
+        echo "Redacted Terraform plan:"
+        cat "$DIRECTORY/summary.md" "$DIRECTORY/detail.md"
         echo "Terraform plan verified. Private plan and diagnostics are not published." >> "$GITHUB_STEP_SUMMARY"
 
         if [[ "$APPLY" == true ]]; then
