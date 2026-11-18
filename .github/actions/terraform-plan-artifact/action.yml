@@ -58,6 +58,22 @@ runs:
         FOUNDRY_AGENT_URL: ${{ inputs.foundry-agent-url }}
       run: |
         set -euo pipefail
+
+        fail() {
+          printf '::error::%s\n' "$1"
+          printf '\n### Terraform check failed\n\n%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        }
+
+        fail_plan_or_apply() {
+          local operation=$1 log=$2
+          # Match only the Terraform diagnostic title; never render the log or its lock details.
+          if grep -Fqx 'Error: Error acquiring the state lock' "$log"; then
+            fail "Terraform $operation could not acquire the state lock. Check for an active Terraform run or contact the state owner if the lock persists."
+          fi
+          fail "Terraform $operation failed. Inspect the target securely before retrying; raw diagnostics are withheld."
+        }
+
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
           "${ARM_SUBSCRIPTION_ID:?Required Azure subscription ID}" "${STATE_ACCOUNT:?Required state account}" \
           "${STATE_CONTAINER:?Required state container}" "${STATE_KEY:?Required state key}"
@@ -112,8 +128,7 @@ runs:
           -backend-config="storage_account_name=$STATE_ACCOUNT" \
           -backend-config="container_name=$STATE_CONTAINER" \
           -backend-config="key=$STATE_KEY" > "$DIRECTORY/init.log" 2>&1; then
-          echo "::error::Remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
-          exit 1
+          fail "Terraform remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
         fi
         if [[ -n "$FOUNDRY_AGENT_URL" ]]; then
           if [[ "$APPLY" == true || -n "$IMAGE_DIGEST" ||
@@ -123,8 +138,7 @@ runs:
           fi
           if ! state_image=$(terraform -chdir="$TF_ROOT" output -raw image_uri 2>"$DIRECTORY/output.log") ||
             [[ ! "$state_image" =~ ^[a-z0-9.-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::State must contain the existing agent image URI."
-            exit 1
+            fail "Terraform state must contain the existing agent image URI."
           fi
           # Use the live digest; state can lag an out-of-band publication.
           if ! baseline=$(az rest --method get --url "$FOUNDRY_AGENT_URL?api-version=v1" --resource https://ai.azure.com \
@@ -153,14 +167,12 @@ runs:
         case "$plan_status" in
           0|2) ;;
           *)
-            echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
-            exit 1
+            fail_plan_or_apply plan "$DIRECTORY/plan.log"
             ;;
         esac
         if ! terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.json" 2> "$DIRECTORY/show.log"; then
-          echo "::error::Cannot read the private saved plan."
-          exit 1
+          fail "Cannot read the private Terraform plan."
         fi
         if ! jq -r --arg root "$TF_ROOT" --arg environment "$TARGET_ENVIRONMENT" '
           def markdown:
@@ -185,8 +197,7 @@ runs:
             ""
           ] | join("\n")
           ' "$DIRECTORY/plan.json" > "$DIRECTORY/summary.md" 2> "$DIRECTORY/summary.log"; then
-          echo "::error::Cannot generate the sanitized Terraform plan summary."
-          exit 1
+          fail "Cannot generate the sanitized Terraform plan summary."
         fi
         if ! jq -e '
           def backend_target($subscription; $group):
@@ -252,13 +263,11 @@ runs:
               )
             )
           end)' "$DIRECTORY/plan.json" > /dev/null 2> "$DIRECTORY/guard.log"; then
-          echo "::error::Plan target verification failed, or the plan includes a deletion, replacement, or unapproved scope."
-          exit 1
+          fail "Terraform plan target verification failed, or the plan includes a deletion, replacement, or unapproved scope."
         fi
         if ! terraform -chdir="$TF_ROOT" show -no-color "$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.txt" 2> "$DIRECTORY/show-text.log"; then
-          echo "::error::Cannot render the private saved plan."
-          exit 1
+          fail "Cannot render the private Terraform plan."
         fi
         if ! python3 - "$DIRECTORY/plan.json" "$DIRECTORY/plan.txt" "$DIRECTORY/detail.md" <<'PY'
         import json
@@ -338,8 +347,7 @@ runs:
         Path(sys.argv[3]).write_text(detail, encoding="utf-8")
         PY
         then
-          echo "::error::Cannot safely redact the Terraform plan."
-          exit 1
+          fail "Cannot safely redact the Terraform plan."
         fi
         cat "$DIRECTORY/summary.md" "$DIRECTORY/detail.md" >> "$GITHUB_STEP_SUMMARY"
         echo "Redacted Terraform plan:"
@@ -353,8 +361,7 @@ runs:
             "$DIRECTORY/terraform.tfplan" > "$DIRECTORY/apply.log" 2>&1; then
             echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "::error::Terraform apply failed. Inspect the target securely before retrying; raw diagnostics are withheld."
-            exit 1
+            fail_plan_or_apply apply "$DIRECTORY/apply.log"
           fi
           if [[ "$TF_ROOT" == infra/backend ]]; then
             if ! release=$(terraform -chdir="$TF_ROOT" output -json 2>"$DIRECTORY/output.log" | jq -ce '
@@ -364,8 +371,7 @@ runs:
                 .image == ("crskiregistrydevncus.azurecr.io/ski-backend@" + env.TF_VAR_container_image_digest) and
                 .endpoint == "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus"
               )'); then
-              echo "::error::Current Terraform state did not return valid backend release metadata."
-              exit 1
+              fail "Current Terraform state did not return valid backend release metadata."
             fi
             printf 'backend-release=%s\n' "$release" >> "$GITHUB_OUTPUT"
           fi

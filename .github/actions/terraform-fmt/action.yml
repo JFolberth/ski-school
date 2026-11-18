@@ -6,4 +6,8 @@ runs:
     - name: Check infrastructure formatting
       shell: bash
       run: |
-        terraform fmt -check -recursive infra
+        if ! terraform fmt -check -recursive infra; then
+          printf '\n### Terraform formatting failed\n\nRun %s and review the resulting changes.\n' \
+            "\`terraform fmt -recursive infra\`" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
