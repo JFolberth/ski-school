@@ -45,6 +45,10 @@ on:
         description: Immutable bridge image digest for the frontend Terraform root.
         type: string
         default: ''
+    outputs:
+      deployment-metadata:
+        description: Validated release metadata from the apply action, when provided by the root.
+        value: ${{ jobs.deploy.outputs.deployment-metadata }}
     secrets:
       FRONTEND_SESSION_SIGNING_KEY:
         description: Existing frontend session-signing key, passed ephemerally to Terraform.
@@ -63,6 +67,8 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      deployment-metadata: ${{ steps.apply.outputs.backend-release }}
     strategy:
       fail-fast: false
       matrix:
@@ -221,30 +227,3 @@ jobs:
           apply: "true"
           image-digest: ${{ inputs.image-digest }}
           bridge-image-digest: ${{ inputs.bridge-image-digest }}
-      - uses: actions/checkout@v7
-        if: inputs.terraform-root == 'infra/backend'
-        with:
-          ref: ${{ github.sha }}
-          path: release-checks
-          sparse-checkout: src/backend
-          persist-credentials: false
-      - uses: actions/setup-python@v6
-        if: inputs.terraform-root == 'infra/backend'
-        with:
-          python-version: '3.12'
-      - name: Verify the exact deployed backend version
-        if: inputs.terraform-root == 'infra/backend'
-        working-directory: release-checks/src/backend
-        env:
-          BACKEND_RELEASE: ${{ steps.apply.outputs.backend-release }}
-          PIP_INDEX_URL: https://packagefeedproxy.microsoft.io/pypi/simple/
-          PIP_TRUSTED_HOST: packagefeedproxy.microsoft.io
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet --require-hashes -r requirements.txt
-          python scripts/wait_for_agent.py \
-            --project-endpoint "$(jq -er .endpoint <<< "$BACKEND_RELEASE")" \
-            --agent-name "$(jq -er .agent <<< "$BACKEND_RELEASE")" \
-            --agent-version "$(jq -er .version <<< "$BACKEND_RELEASE")" \
-            --expected-image "$(jq -er .image <<< "$BACKEND_RELEASE")" \
-            --smoke-test
