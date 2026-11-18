@@ -49,6 +49,12 @@ models = {
     weight              = 50
   }
 }
+mcp_endpoints = {
+  ski-tools = {
+    backend_url    = "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/toolboxes/ski-tools/versions/3/mcp?api-version=v1"
+    token_audience = "https://ai.azure.com"
+  }
+}
 monitor_workspace_id = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-logs-dev-ncus/providers/Microsoft.Monitor/accounts/amw-ski-logs-dev-eus2"
 native_otlp_enabled  = true
 subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"

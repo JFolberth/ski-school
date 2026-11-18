@@ -25,6 +25,15 @@ output "gateway_principal_id" {
   value       = module.gateway.principal_id
 }
 
+output "mcp_endpoint_urls" {
+  description = "Gateway MCP invocation URLs keyed by server name; empty when no MCP endpoints are configured."
+  value = {
+    for name in keys(var.mcp_endpoints) :
+    name => "https://${module.gateway.hostname}/default/toolservers/${name}/mcp"
+  }
+  sensitive = true
+}
+
 output "model_alias_id" {
   description = "Alias ARM ID and caller authorization scope, null until the shared provider, alias, and model map are configured."
   value       = try(module.model_alias["primary"].id, null)
