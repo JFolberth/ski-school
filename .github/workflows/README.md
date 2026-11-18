@@ -66,9 +66,7 @@ route dev traffic to the latest version before the smoke check finishes when
 the endpoint uses its default selector.
 
 Dev explicitly references the existing `Microsoft.DefaultV2` guardrail in
-`infra/backend/dev.tfvars`. If an AzAPI write fails with an Azure HTTP
-response, the job summary reports the status and any recognized error code,
-without publishing the request URL or response body.
+`infra/backend/dev.tfvars`.
 
 Before enabling delivery:
 
