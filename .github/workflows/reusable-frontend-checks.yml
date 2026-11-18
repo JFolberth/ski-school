@@ -1,0 +1,110 @@
+name: Reusable frontend checks
+
+on:
+  workflow_call:
+    inputs:
+      require-existing-state:
+        description: Refuse Terraform plans against a missing frontend state blob.
+        type: boolean
+        default: false
+    outputs:
+      frontend-image-id:
+        description: Docker image ID of the tested frontend image.
+        value: ${{ jobs.images.outputs.frontend-image-id }}
+      frontend-artifact-id:
+        description: Immutable frontend image artifact from this run.
+        value: ${{ jobs.images.outputs.frontend-artifact-id }}
+      frontend-artifact-digest:
+        description: SHA-256 digest of the frontend image artifact.
+        value: ${{ jobs.images.outputs.frontend-artifact-digest }}
+      bridge-image-id:
+        description: Docker image ID of the tested bridge image.
+        value: ${{ jobs.images.outputs.bridge-image-id }}
+      bridge-artifact-id:
+        description: Immutable bridge image artifact from this run.
+        value: ${{ jobs.images.outputs.bridge-artifact-id }}
+      bridge-artifact-digest:
+        description: SHA-256 digest of the bridge image artifact.
+        value: ${{ jobs.images.outputs.bridge-artifact-digest }}
+      artifact-id:
+        description: Immutable frontend Terraform source artifact from this run.
+        value: ${{ jobs.source.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 digest of the frontend Terraform source artifact.
+        value: ${{ jobs.source.outputs.artifact-digest }}
+      modules-artifact-id:
+        description: Immutable shared Terraform modules artifact from this run.
+        value: ${{ jobs.modules.outputs.artifact-id }}
+      modules-artifact-digest:
+        description: SHA-256 digest of the shared Terraform modules artifact.
+        value: ${{ jobs.modules.outputs.artifact-digest }}
+      environments:
+        description: Validated frontend environment and backend manifest.
+        value: ${{ jobs.terraform.outputs.environments }}
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY:
+        description: Existing frontend session-signing key, passed ephemerally to Terraform.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    name: Frontend images
+    uses: ./.github/workflows/reusable-frontend-build.yml
+    with:
+      artifact-prefix: frontend-ci
+
+  modules:
+    name: Shared Terraform modules
+    uses: ./.github/workflows/reusable-terraform-modules.yml
+
+  terraform:
+    name: Frontend Terraform checks
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-plan.yml
+    with:
+      terraform-root: infra/frontend
+      module-path: infra/modules
+      state-key: ski-school-frontend.tfstate
+      artifact-prefix: frontend-ci
+      require-session-signing-key: true
+      require-existing-state: ${{ inputs.require-existing-state }}
+      require-expected-resource-group: true
+      publish-source: false
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-frontend-dev-ncus"}]
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
+
+  source:
+    name: Publish frontend Terraform source
+    if: >-
+      ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' &&
+      !endsWith(github.actor, '[bot]') &&
+      github.event.pull_request.user.type != 'Bot' &&
+      github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.source.outputs.artifact-id }}
+      artifact-digest: ${{ steps.source.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Publish root source for this revision
+        id: source
+        uses: ./.github/actions/terraform-source-artifact
+        with:
+          terraform-root: infra/frontend
+          name: frontend-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          state-key: ski-school-frontend.tfstate
+          environments: >-
+            [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-frontend-dev-ncus"}]

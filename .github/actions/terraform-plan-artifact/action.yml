@@ -31,6 +31,9 @@ inputs:
   image-digest:
     description: Published container image digest for apply when the Terraform root requires one.
     default: ""
+  bridge-image-digest:
+    description: Published bridge image digest for frontend apply.
+    default: ""
   foundry-agent-url:
     description: Optional Foundry agent URL to resolve the active image digest for a plan.
     default: ""
@@ -55,6 +58,7 @@ runs:
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
         IMAGE_DIGEST: ${{ inputs.image-digest }}
+        BRIDGE_IMAGE_DIGEST: ${{ inputs.bridge-image-digest }}
         FOUNDRY_AGENT_URL: ${{ inputs.foundry-agent-url }}
       run: |
         set -euo pipefail
@@ -156,6 +160,18 @@ runs:
           fi
           export TF_VAR_container_image_digest="$IMAGE_DIGEST"
         fi
+        if [[ "$TF_ROOT" == "infra/frontend" && "$APPLY" == true ]]; then
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ &&
+            "$BRIDGE_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+              echo "::error::Frontend apply requires published frontend and bridge image digests."
+              exit 1
+            }
+          export TF_VAR_bridge_image_digest="$BRIDGE_IMAGE_DIGEST"
+          export TF_VAR_deployment_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        elif [[ -n "$BRIDGE_IMAGE_DIGEST" ]]; then
+          echo "::error::A bridge image digest is only valid for frontend apply."
+          exit 1
+        fi
         plan_status=0
         terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
           -detailed-exitcode -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" \
@@ -221,18 +237,40 @@ runs:
                 else false end
               )
             );
+          def frontend_target($acr; $agent):
+            env.TARGET_ENVIRONMENT == "dev" and env.EXPECTED_RESOURCE_GROUP == "rg-ski-frontend-dev-ncus" and
+            ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [$acr, $agent] and
+            [.variables.container_image_repository.value, .variables.bridge_image_repository.value] == ["ski-school/frontend", "ski-school/bridge"] and
+            (env.APPLY != "true" or (
+              ([env.TF_VAR_container_image_digest, env.TF_VAR_bridge_image_digest] | all(.[]; test("^sha256:[0-9a-f]{64}$"))) and
+              [.variables.container_image_digest.value, .variables.bridge_image_digest.value] == [env.TF_VAR_container_image_digest, env.TF_VAR_bridge_image_digest]
+            ));
+          def frontend_scope($subscription; $acr; $agent; $parent; $resource):
+            env.TF_ROOT == "infra/frontend" and env.TARGET_ENVIRONMENT == "dev" and
+            $resource.type == "Microsoft.Authorization/roleAssignments@2022-04-01" and
+            (($resource.body | if type == "string" then fromjson else . end | .properties.roleDefinitionId | ascii_downcase) as $role |
+              ($subscription + "/providers/microsoft.authorization/roledefinitions/") as $prefix |
+              (.address == "module.aca.azapi_resource.acr_pull_role_assignment" and $parent == $acr and
+                ($role == ($prefix + "b93aa761-3e63-49ed-ac28-beffa264f7ac") or $role == ($prefix + "7f951dda-4ed3-4680-a7ca-43fe172d538d"))) or
+              (.address == "module.aca.azapi_resource.foundry_agent_consumer" and $parent == $agent and
+                $role == ($prefix + "eed3b665-ab3a-47b6-8f48-c9382fb1dad6"))
+            );
           ("/subscriptions/" + env.ARM_SUBSCRIPTION_ID | ascii_downcase) as $subscription |
           ($subscription + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase)) as $group |
           (.variables.telemetry_exporter.value.data_collection_rule_id // "" | ascii_downcase) as $dcr |
           (.variables.project_acr_connection.value.registry_id // "" | ascii_downcase) as $acr |
+          ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus") as $frontend_acr |
+          ($subscription + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev") as $frontend_agent |
           .errored != true and
           .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
           .variables.environment.value == env.TARGET_ENVIRONMENT and
           (if env.TF_ROOT == "infra/backend" then
             .variables.tenant_id.value == env.ARM_TENANT_ID and backend_target($subscription; $group)
-          elif env.EXPECTED_RESOURCE_GROUP == "" then true else
-            .variables.tenant_id.value == env.ARM_TENANT_ID and
+          elif env.EXPECTED_RESOURCE_GROUP == "" and env.TF_ROOT != "infra/frontend" then true else
+            (.variables.tenant_id.value == env.ARM_TENANT_ID or
+              (env.TF_ROOT == "infra/frontend" and .variables.tenant_id == null)) and
             (.planned_values.outputs.resource_group_id.value | ascii_downcase) == $group and
+            (env.TF_ROOT != "infra/frontend" or frontend_target($frontend_acr; $frontend_agent)) and
             all(.resource_changes[]? | select(.mode == "managed");
               (.change.actions | index("delete") | not) and
               (.change.after as $after |
@@ -251,10 +289,28 @@ runs:
                   .address == "module.project_acr_image_pull[\"backend\"].azapi_resource.this" and
                   ($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
                   $parent == $acr and
-                  $parent == ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"))
+                  $parent == ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus")) or
+                frontend_scope($subscription; $frontend_acr; $frontend_agent; $parent; $after)
               )
             )
           end)' "$DIRECTORY/plan.json" > /dev/null 2> "$DIRECTORY/guard.log"; then
+          if [[ "$TF_ROOT" == "infra/frontend" ]]; then
+            {
+              echo '### Frontend plan guard diagnostics'
+              echo 'The following checks omit planned values and secrets.'
+              if ! jq -r '
+                "subscription_id_matches=\(.variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID)",
+                "tenant_id_matches=\(.variables.tenant_id.value == env.ARM_TENANT_ID or .variables.tenant_id == null)",
+                "environment_matches=\(.variables.environment.value == env.TARGET_ENVIRONMENT)",
+                "resource_group_output_matches=\(try ((.planned_values.outputs.resource_group_id.value | ascii_downcase) == ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase))) catch false)",
+                "frontend_targets_match=\(try ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"), ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev")]) catch false)",
+                "image_repositories_match=\(try ([.variables.container_image_repository.value, .variables.bridge_image_repository.value] == ["ski-school/frontend", "ski-school/bridge"]) catch false)",
+                "managed_resource_changes=\([.resource_changes[]? | select(.mode == "managed") | "\(.address) [\(.change.actions | join(","))]"] | join(", "))"
+              ' "$DIRECTORY/plan.json" | tee -a "$GITHUB_STEP_SUMMARY"; then
+                echo 'Plan diagnostics were unavailable.' >> "$GITHUB_STEP_SUMMARY"
+              fi
+            } 2>/dev/null
+          fi
           fail "Terraform plan target verification failed, or the plan includes a deletion, replacement, or unapproved scope."
         fi
         if ! terraform -chdir="$TF_ROOT" show -no-color "$DIRECTORY/terraform.tfplan" \

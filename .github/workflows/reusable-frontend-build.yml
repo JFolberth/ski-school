@@ -17,27 +17,38 @@ on:
       retention-days:
         type: number
         default: 7
+    outputs:
+      frontend-image-id:
+        description: Docker image ID of the tested frontend image.
+        value: ${{ jobs.frontend.outputs.image-id }}
+      frontend-artifact-id:
+        description: Immutable frontend image artifact from this run.
+        value: ${{ jobs.frontend.outputs.artifact-id }}
+      frontend-artifact-digest:
+        description: SHA-256 digest of the frontend image artifact.
+        value: ${{ jobs.frontend.outputs.artifact-digest }}
+      bridge-image-id:
+        description: Docker image ID of the tested bridge image.
+        value: ${{ jobs.bridge.outputs.image-id }}
+      bridge-artifact-id:
+        description: Immutable bridge image artifact from this run.
+        value: ${{ jobs.bridge.outputs.artifact-id }}
+      bridge-artifact-digest:
+        description: SHA-256 digest of the bridge image artifact.
+        value: ${{ jobs.bridge.outputs.artifact-digest }}
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build ${{ matrix.image }}
+  frontend:
+    name: Build frontend
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: frontend
-            context: ${{ inputs.frontend-context }}
-            build-args: ""
-          - image: bridge
-            context: ${{ inputs.bridge-context }}
-            build-args: |
-              PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
-              PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io
+    outputs:
+      image-id: ${{ steps.build.outputs.image-id }}
+      artifact-id: ${{ steps.build.outputs.artifact-id }}
+      artifact-digest: ${{ steps.build.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -45,25 +56,49 @@ jobs:
 
       - name: Build and publish image artifact
         uses: ./.github/actions/build-image-artifact
+        id: build
         with:
-          image-name: ${{ matrix.image }}
-          context: ${{ matrix.context }}
-          dockerfile: ${{ matrix.context }}/Dockerfile
-          image-tag: ski-school-ci/${{ matrix.image }}:${{ github.sha }}
-          build-args: ${{ matrix.build-args }}
+          image-name: frontend
+          context: ${{ inputs.frontend-context }}
+          dockerfile: ${{ inputs.frontend-context }}/Dockerfile
+          image-tag: ski-school-ci/frontend:${{ github.sha }}
           artifact-prefix: ${{ inputs.artifact-prefix }}
           retention-days: ${{ inputs.retention-days }}
 
       - name: Check frontend JavaScript syntax
-        if: matrix.image == 'frontend'
         env:
-          CONTEXT: ${{ matrix.context }}
+          CONTEXT: ${{ inputs.frontend-context }}
         run: node --check "$GITHUB_WORKSPACE/$CONTEXT/app.js"
 
       - name: Check nginx configuration
-        if: matrix.image == 'frontend'
         run: docker run --rm --network none --entrypoint nginx "ski-school-ci/frontend:$GITHUB_SHA" -t
 
+  bridge:
+    name: Build bridge
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image-id: ${{ steps.build.outputs.image-id }}
+      artifact-id: ${{ steps.build.outputs.artifact-id }}
+      artifact-digest: ${{ steps.build.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build and publish image artifact
+        uses: ./.github/actions/build-image-artifact
+        id: build
+        with:
+          image-name: bridge
+          context: ${{ inputs.bridge-context }}
+          dockerfile: ${{ inputs.bridge-context }}/Dockerfile
+          image-tag: ski-school-ci/bridge:${{ github.sha }}
+          build-args: |
+            PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
+            PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io
+          artifact-prefix: ${{ inputs.artifact-prefix }}
+          retention-days: ${{ inputs.retention-days }}
+
       - name: Check bridge dependencies
-        if: matrix.image == 'bridge'
         run: docker run --rm --network none "ski-school-ci/bridge:$GITHUB_SHA" python -I -m pip check

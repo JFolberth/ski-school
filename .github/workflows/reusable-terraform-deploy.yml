@@ -41,6 +41,14 @@ on:
         description: Immutable container image digest from the publication job, when required by the Terraform root.
         type: string
         default: ''
+      bridge-image-digest:
+        description: Immutable bridge image digest for the frontend Terraform root.
+        type: string
+        default: ''
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY:
+        description: Existing frontend session-signing key, passed ephemerally to Terraform.
+        required: false
 
 permissions:
   contents: read
@@ -77,6 +85,7 @@ jobs:
       ARM_SKIP_PROVIDER_REGISTRATION: "true"
       AZAPI_LOG_SENSITIVE_DATA: "false"
       AZURE_CORE_OUTPUT: none
+      TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
     steps:
       - name: Download and verify the exact CI source and shared modules
         id: download
@@ -206,11 +215,12 @@ jobs:
           state-account: ${{ matrix.environment.state_storage_account }}
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
-          require-session-signing-key: "false"
+          require-session-signing-key: ${{ inputs.terraform-root == 'infra/frontend' }}
           require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
           image-digest: ${{ inputs.image-digest }}
+          bridge-image-digest: ${{ inputs.bridge-image-digest }}
       - uses: actions/checkout@v7
         if: inputs.terraform-root == 'infra/backend'
         with:
