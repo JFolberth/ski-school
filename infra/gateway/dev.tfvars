@@ -54,6 +54,7 @@ native_otlp_enabled  = true
 subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"
 tags                 = {}
 # Endpoint URLs here are configured values, distinct from asynchronous service-returned DCR metadata.
+telemetry_payload_capture = true
 telemetry_exporter = {
   "data_collection_rule_id" : "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/ai_appi-ski-gateway-dev-eus2_50797926-934b-4403-a5c8-8a2d014953fe_managed/providers/Microsoft.Insights/dataCollectionRules/managed-appi-ski-gateway-dev-eus2-dcr",
   "endpoints" : {

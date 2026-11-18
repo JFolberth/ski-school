@@ -8,7 +8,7 @@ resource "azapi_resource" "this" {
   body = {
     properties = {
       telemetryExporterType = "OpenTelemetry"
-      payloadCapture        = false
+      payloadCapture        = var.payload_capture
       authentication = {
         managedIdentity = {
           resource = "https://monitor.azure.com/"

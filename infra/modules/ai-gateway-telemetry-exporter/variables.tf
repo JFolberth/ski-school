@@ -23,6 +23,13 @@ variable "name" {
   }
 }
 
+variable "payload_capture" {
+  type        = bool
+  description = "Capture prompts, completions, and tool input/output without built-in PII redaction."
+  default     = false
+  nullable    = false
+}
+
 variable "workspace_id" {
   type        = string
   description = "Service-created gateway default workspace ARM ID."
