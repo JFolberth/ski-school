@@ -10,7 +10,7 @@ on:
         type: string
         default: infra/modules/aca
       environments:
-        description: JSON targets containing environment, state coordinates, and the expected resource group for guarded roots.
+        description: JSON targets containing environment and state coordinates, plus an expected resource group when required.
         type: string
         default: >-
           [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate"}]
@@ -29,6 +29,10 @@ on:
         default: true
       require-existing-state:
         description: Refuse plans against a missing state blob.
+        type: boolean
+        default: false
+      require-expected-resource-group:
+        description: Require an expected resource group in every target.
         type: boolean
         default: false
       foundry-agent-url:
@@ -67,7 +71,7 @@ jobs:
         id: targets
         env:
           ENVIRONMENTS: ${{ inputs.environments }}
-          TF_ROOT: ${{ inputs.terraform-root }}
+          REQUIRE_EXPECTED_RESOURCE_GROUP: ${{ inputs.require-expected-resource-group }}
         run: |
           set -euo pipefail
           environments=$(jq -ce '
@@ -76,11 +80,9 @@ jobs:
                 (.name | type == "string" and test("^[a-z]{3}$")) and
                 (.state_storage_account | type == "string" and test("^[a-z0-9]{3,24}$")) and
                 (.state_container | type == "string" and test("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$") and (contains("--") | not)) and
-                (if (env.TF_ROOT == "infra/backend" or env.TF_ROOT == "infra/foundry" or env.TF_ROOT == "infra/gateway" or
-                     env.TF_ROOT == "infra/logging" or env.TF_ROOT == "infra/registry") then
-                  (keys == ["expected_resource_group","name","state_container","state_storage_account"]) and
+                (if has("expected_resource_group") then
                   (.expected_resource_group | type == "string" and test("^[a-zA-Z0-9_-][a-zA-Z0-9_.()-]{0,89}$") and (endswith(".") | not))
-                else true end)) and
+                else env.REQUIRE_EXPECTED_RESOURCE_GROUP != "true" end)) and
               ([.[].name] | length == (unique | length)) and
               ([.[].state_storage_account] | length == (unique | length))
             then . else error("Require nonempty unique environments with isolated storage accounts and explicit resource groups for guarded roots.") end

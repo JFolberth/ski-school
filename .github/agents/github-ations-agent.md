@@ -37,6 +37,7 @@ no-new-test-cases policies. Agent profiles are operational configuration.
 - The user has requested shorter workflow files. A cohesive extraction can be justified even with one current caller; do not limit extraction to literal duplication, or create one-line wrappers around every official action.
 - Prefer maintained official actions inside composites for tool setup, Docker builds, authentication, and artifact publication. Keep unavoidable CLI commands short and inline; do not move large scripts into helper files just to shorten YAML.
 - Declare meaningful inputs and outputs. Take repository paths, Docker contexts/files, module paths, and output directories as inputs with sensible defaults; derive internal artifact filenames within those directories rather than introducing a parameter for every basename.
+- Keep shared checks generic. Choose behavior through explicit inputs and validate their shape, not lists of image types or Terraform root paths. Keep workload-specific policy in the calling workflow or a dedicated guard without weakening target or artifact verification.
 - Map action inputs through step `env:` before using them in `run:` commands. Quote expansions and validate paths stay inside their approved repository or runner-temporary boundary.
 - Use `shell: bash` on every composite `run:` step. Do not assume workflow-level environment variables or implicit `INPUT_*` variables are an action's declared interface.
 - Keep top-level action `name` and `description` static. Use expressions only in fields supported by GitHub's metadata schema.
