@@ -88,7 +88,9 @@ Before enabling delivery:
 
 The state move does not resolve existing Foundry drift. If state and Foundry
 report different versions, review the first refreshed plan and keep the
-previous image/version available for rollback. See
+previous image/version available for rollback. Dev plans read the existing
+agent identity before planning role assignments, and an update fails if Foundry
+returns a different identity. See
 [Foundry hosted-agent permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions)
 and [hosted-agent routing](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-agent).
 

@@ -91,6 +91,12 @@ variable "project_endpoint" {
     error_message = "Use the existing HTTPS project endpoint ending in /api/projects/<project>, without a query."
   }
 }
+variable "existing_agent" {
+  type        = bool
+  description = "Read and verify the existing logical agent's instance identity during a version update. Leave false when creating an agent."
+  default     = false
+  nullable    = false
+}
 variable "rai_policy_id" {
   type        = string
   description = "Full ARM ID of a reviewed account policy, or null to enable the platform default guardrail. Verify live filtering separately."

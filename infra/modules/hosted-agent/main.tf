@@ -1,3 +1,16 @@
+locals {
+  project_parent_id = trimprefix(trimsuffix(var.project_endpoint, "/"), "https://")
+}
+
+# Read the existing identity independently of the managed agent's pending version update.
+data "azapi_data_plane_resource" "existing" {
+  count                  = var.existing_agent ? 1 : 0
+  type                   = "Microsoft.Foundry/agents@v1"
+  name                   = var.agent_name
+  parent_id              = local.project_parent_id
+  response_export_values = ["instance_identity.principal_id"]
+}
+
 # Logical agent, not an ARM agent/version resource. Terraform is its sole writer.
 # https://learn.microsoft.com/azure/foundry/agents/how-to/deploy-hosted-agent-terraform
 # AzAPI data-plane resources expose no ARM schema_validation_enabled switch.
@@ -5,7 +18,7 @@
 resource "azapi_data_plane_resource" "this" {
   type      = "Microsoft.Foundry/agents@v1"
   name      = var.agent_name
-  parent_id = trimprefix(trimsuffix(var.project_endpoint, "/"), "https://")
+  parent_id = local.project_parent_id
   body = {
     name = var.agent_name
     definition = {
@@ -48,6 +61,13 @@ resource "azapi_data_plane_resource" "this" {
     postcondition {
       condition     = can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", self.output.instance_identity.principal_id))
       error_message = "Foundry did not return a valid default instance identity principal ID; the gateway grant cannot be created."
+    }
+    postcondition {
+      condition = var.existing_agent ? (
+        lower(self.output.instance_identity.principal_id) ==
+        lower(data.azapi_data_plane_resource.existing[0].output.instance_identity.principal_id)
+      ) : true
+      error_message = "Foundry changed the default instance identity during the update. Review its runtime role assignments before retrying."
     }
   }
 }

@@ -90,6 +90,12 @@ variable "project_endpoint" {
   description = "Reviewed existing Foundry HTTPS project data-plane endpoint, not an ARM ID; no project is created by this root."
   nullable    = false
 }
+variable "existing_agent" {
+  type        = bool
+  description = "Require an existing Foundry agent and verify that version updates preserve its runtime identity."
+  default     = false
+  nullable    = false
+}
 variable "rai_policy_id" {
   type        = string
   description = "Full ARM ID of a reviewed account policy, or null to enable the platform default guardrail. Verify live filtering separately."
