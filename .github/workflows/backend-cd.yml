@@ -92,9 +92,51 @@ jobs:
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
 
+  prepare:
+    name: Record backend serving baseline
+    needs: [checks, publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      baseline: ${{ steps.routing.outputs.baseline }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the single approved deployment target
+        env:
+          ENVIRONMENTS: ${{ needs.checks.outputs.environments }}
+        run: |
+          if ! jq -e '
+            type == "array" and length == 1 and
+            .[0].name == "dev" and
+            .[0].expected_resource_group == "rg-ski-foundry-dev-ncus"
+          ' <<< "$ENVIRONMENTS" >/dev/null; then
+            echo "::error::Backend promotion requires exactly the approved deployment target."
+            exit 1
+          fi
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - id: routing
+        uses: ./.github/actions/backend-agent-release
+        with:
+          tenant-id: 5a4de383-e76f-4737-9623-e6281d36d202
+          subscription-id: 9a7e9255-7824-4c0d-a414-366f436f61dd
+          project-endpoint: https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus
+          agent-name: ski-backend-dev
+
   deploy:
     name: Deploy backend hosted agent
-    needs: [checks, publish]
+    needs: [checks, publish, prepare]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -112,3 +154,70 @@ jobs:
       state-key: ski-school-backend.tfstate
       require-existing-state: true
       image-digest: ${{ needs.publish.outputs.digest }}
+
+  promote:
+    name: Verify and promote backend agent
+    needs: [publish, prepare, deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      BACKEND_RELEASE: ${{ needs.deploy.outputs.deployment-metadata }}
+      IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Validate the exact candidate handoff
+        run: |
+          set -euo pipefail
+          az account show --output json --only-show-errors | jq -e '
+            .id == "9a7e9255-7824-4c0d-a414-366f436f61dd" and
+            .tenantId == "5a4de383-e76f-4737-9623-e6281d36d202"
+          ' >/dev/null
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+            ! jq -e --arg image "crskiregistrydevncus.azurecr.io/ski-backend@$IMAGE_DIGEST" '
+            .agent == "ski-backend-dev" and
+            .endpoint == "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus" and
+            .image == $image and
+            (.version | strings | test("^[1-9][0-9]*$"))
+          ' <<< "$BACKEND_RELEASE" >/dev/null; then
+            echo "::error::Invalid backend candidate metadata or published image digest."
+            exit 1
+          fi
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify the exact deployed backend version
+        working-directory: src/backend
+        env:
+          PIP_INDEX_URL: https://packagefeedproxy.microsoft.io/pypi/simple/
+          PIP_TRUSTED_HOST: packagefeedproxy.microsoft.io
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --require-hashes -r requirements.txt
+          python scripts/wait_for_agent.py \
+            --project-endpoint "$(jq -er .endpoint <<< "$BACKEND_RELEASE")" \
+            --agent-name "$(jq -er .agent <<< "$BACKEND_RELEASE")" \
+            --agent-version "$(jq -er .version <<< "$BACKEND_RELEASE")" \
+            --expected-image "$(jq -er .image <<< "$BACKEND_RELEASE")" \
+            --smoke-test
+      - name: Promote the checked backend version
+        uses: ./.github/actions/backend-agent-release
+        with:
+          tenant-id: 5a4de383-e76f-4737-9623-e6281d36d202
+          subscription-id: 9a7e9255-7824-4c0d-a414-366f436f61dd
+          project-endpoint: ${{ fromJSON(env.BACKEND_RELEASE).endpoint }}
+          agent-name: ${{ fromJSON(env.BACKEND_RELEASE).agent }}
+          baseline: ${{ needs.prepare.outputs.baseline }}
+          agent-version: ${{ fromJSON(env.BACKEND_RELEASE).version }}

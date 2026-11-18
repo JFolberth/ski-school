@@ -32,6 +32,7 @@ no-new-test-cases policies. Agent profiles are operational configuration.
 
 ## Reusable Boundaries
 
+- Keep action and workflow interfaces environment-neutral, even when the only current caller targets one environment. Do not infer an environment's purpose or hard-code labels such as `DEV` or `PROD` into action/workflow/job names, variable names, input/output parameters, or descriptions. Supply environment-specific values through caller configuration, explicit inputs, or GitHub Environment variables; a configured `dev` value does not make the component development-only. Do not enable additional environments without a request.
 - Extract repeated or cohesive step sequences to `.github/actions/<name>/action.yml` using `runs.using: composite`.
 - Extract repeated jobs/job sequences to reusable workflows using `on: workflow_call`. Keep event filters, matrix selection, environments, permissions, concurrency, and job dependencies in workflows.
 - The user has requested shorter workflow files. A cohesive extraction can be justified even with one current caller; do not limit extraction to literal duplication, or create one-line wrappers around every official action.

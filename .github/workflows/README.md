@@ -59,11 +59,24 @@ state output. Fork and bot PRs do not get Azure credentials. On pushes to
 `main`, `backend-cd.yml` repeats the same checks and verifies the tested image
 artifact from that run, publishes it to `ski-backend`,
 then freshly plans the verified Terraform source using the exact registry
-digest and applies it if there are changes. It checks readiness and invokes a
-session pinned to the version recorded in Terraform state, even when apply is
-skipped. No Azure Container App or routing rules are changed. Foundry can
-route dev traffic to the latest version before the smoke check finishes when
-the endpoint uses its default selector.
+digest and applies it if there are changes. Before Terraform, Backend CD records
+the current pinned serving version. Automatic-latest routing fails this preflight;
+pin a concrete serving version before running CD so an unchecked candidate cannot
+receive default traffic. After Terraform completes, `backend-cd.yml` directly
+runs `wait_for_agent.py` to check readiness and invoke a session pinned to the
+captured candidate, even when apply is skipped. Only after those checks pass
+does the backend-specific routing action promote that exact version at 100%.
+It checks the previous selector for concurrent changes and verifies the new
+selector without changing protocol or authorization settings. Failed checks
+leave the baseline selected; a failed routing write requires inspecting the
+live selector before retrying, not an automatic rollback. No Azure Container
+App is changed. The reusable Terraform deployment workflow does not execute
+backend readiness checks or promotion.
+
+The routing action accepts the target tenant, subscription, project endpoint,
+and agent name from its caller, so it can also be reused by other environments.
+Branch/event restrictions and GitHub Environment approvals belong to the calling
+workflow; Backend CD currently enables only DEV.
 
 Dev explicitly references the existing `Microsoft.DefaultV2` guardrail in
 `infra/backend/dev.tfvars`.

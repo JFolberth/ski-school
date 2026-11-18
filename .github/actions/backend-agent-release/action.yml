@@ -1,0 +1,85 @@
+name: Backend agent routing
+description: Record a pinned serving version or promote an exact verified backend version.
+inputs:
+  tenant-id:
+    description: Expected Azure tenant for this release.
+    required: true
+  subscription-id:
+    description: Expected Azure subscription for this release.
+    required: true
+  project-endpoint:
+    description: HTTPS Foundry project endpoint for this environment.
+    required: true
+  agent-name:
+    description: Backend agent name for this environment.
+    required: true
+  baseline:
+    description: Expected serving version; required when promoting.
+    default: ''
+  agent-version:
+    description: Exact checked version to promote; omit to record the existing pinned baseline.
+    default: ''
+outputs:
+  baseline:
+    description: Previous concrete serving version.
+    value: ${{ steps.routing.outputs.baseline }}
+runs:
+  using: composite
+  steps:
+    - name: Update backend endpoint routing
+      id: routing
+      shell: bash
+      env:
+        BASELINE: ${{ inputs.baseline }}
+        AGENT_VERSION: ${{ inputs.agent-version }}
+        AGENT_NAME: ${{ inputs.agent-name }}
+        PROJECT_ENDPOINT: ${{ inputs.project-endpoint }}
+        EXPECTED_TENANT: ${{ inputs.tenant-id }}
+        EXPECTED_SUBSCRIPTION: ${{ inputs.subscription-id }}
+        AZURE_CORE_OUTPUT: none
+      run: |
+        set -euo pipefail
+
+        if [[ ! "$PROJECT_ENDPOINT" =~ ^https://[a-zA-Z0-9-]+\.services\.ai\.azure\.com/api/projects/[a-zA-Z0-9_-]+$ ||
+          ! "$AGENT_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
+          echo "::error::Require a Foundry project endpoint and a valid agent name."
+          exit 1
+        fi
+        az account show --output json --only-show-errors |
+          jq -e --arg tenant "$EXPECTED_TENANT" --arg subscription "$EXPECTED_SUBSCRIPTION" '
+            (.tenantId == $tenant and .id == $subscription) or
+              error("Azure login does not match the configured backend target.")
+          ' >/dev/null
+        url="$PROJECT_ENDPOINT/agents/$AGENT_NAME?api-version=v1"
+        query="agent_endpoint.version_selector.version_selection_rules[0].agent_version"
+        current=$(az rest --method get --url "$url" --resource https://ai.azure.com \
+          --query "$query" --output tsv --only-show-errors)
+        if [[ ! "$current" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::Pin the endpoint to a concrete version before deploying; automatic latest routing could expose an unchecked candidate."
+          exit 1
+        fi
+        if [[ -z "$AGENT_VERSION" && -z "$BASELINE" ]]; then
+          printf 'baseline=%s\n' "$current" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        if [[ "$current" != "$BASELINE" || ! "$AGENT_VERSION" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::Missing checked version or backend routing changed since preparation."
+          exit 1
+        fi
+
+        body=$(jq -cn --arg version "$AGENT_VERSION" '{
+          agent_endpoint: {version_selector: {version_selection_rules: [{
+            type: "FixedRatio", agent_version: $version, traffic_percentage: 100
+          }]}}
+        }')
+        # Patch only routing; leave protocol and authorization settings untouched.
+        az rest --method patch --url "$url" --resource https://ai.azure.com \
+          --headers Content-Type=application/merge-patch+json \
+          --body "$body" --output none --only-show-errors
+        selected=$(az rest --method get --url "$url" --resource https://ai.azure.com \
+          --query "$query" --output tsv --only-show-errors)
+        if [[ "$selected" != "$AGENT_VERSION" ]]; then
+          echo "::error::Backend routing read-back failed; inspect the live selector before retrying."
+          exit 1
+        fi
+        echo "Backend agent $AGENT_NAME promoted to version $AGENT_VERSION; previous version: $BASELINE." >> "$GITHUB_STEP_SUMMARY"
