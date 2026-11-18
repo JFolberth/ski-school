@@ -28,7 +28,6 @@ jobs:
     timeout-minutes: 20
     outputs:
       artifact-id: ${{ steps.build.outputs.artifact-id }}
-      artifact-digest: ${{ steps.build.outputs.artifact-digest }}
       image-id: ${{ steps.build.outputs.image-id }}
     steps:
       - uses: actions/checkout@v7
@@ -95,42 +94,41 @@ jobs:
     permissions:
       actions: read
       id-token: write
+    env:
+      ACR_NAME: crskiregistrydevncus
+      IMAGE_REPOSITORY: ski-backend
+      SOURCE_IMAGE: ski-school-ci/backend:${{ github.sha }}
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
       - name: Require explicit release enablement
         env:
           BACKEND_RELEASE_ENABLED: ${{ vars.BACKEND_RELEASE_ENABLED }}
+          ARTIFACT_ID: ${{ needs.image.outputs.artifact-id }}
         run: |
           if [[ "$BACKEND_RELEASE_ENABLED" != true ]]; then
             echo "::error::Backend release is not enabled. Complete the documented dev setup before permitting ACR writes."
             exit 1
           fi
-      - name: Download and verify the image artifact
+          if [[ ! "$ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::The image build must provide an artifact ID."
+            exit 1
+          fi
+      - name: Download the verified image artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.image.outputs.artifact-id }}
+          path: ${{ runner.temp }}/release-image
+          digest-mismatch: error
+      - name: Load the tested image
         env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ needs.image.outputs.artifact-id }}
-          ARTIFACT_DIGEST: ${{ needs.image.outputs.artifact-digest }}
           IMAGE_ID: ${{ needs.image.outputs.image-id }}
         run: |
-          set -euo pipefail
-          [[ "$ARTIFACT_ID" =~ ^[0-9]+$ && "$ARTIFACT_DIGEST" =~ ^[0-9a-f]{64}$ &&
-             "$IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" |
-            jq -e --arg id "$ARTIFACT_ID" --arg digest "$ARTIFACT_DIGEST" '
-              (.id | tostring) == $id and .expired == false and
-              .name == ("backend-ci-backend-" + env.GITHUB_RUN_ID + "-" + env.GITHUB_RUN_ATTEMPT) and
-              .digest == ("sha256:" + $digest) and
-              (.workflow_run.id | tostring) == env.GITHUB_RUN_ID and
-              .workflow_run.head_sha == env.GITHUB_SHA and .workflow_run.head_branch == "main"
-            ' >/dev/null
-          archive="$RUNNER_TEMP/backend-image.zip"
-          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$archive"
-          printf '%s  %s\n' "$ARTIFACT_DIGEST" "$archive" | sha256sum --check
-          unzip -p "$archive" image.tar > "$RUNNER_TEMP/backend-image.tar"
-          docker load --input "$RUNNER_TEMP/backend-image.tar"
-          [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' \
-            "ski-school-ci/backend:$GITHUB_SHA")" == "$IMAGE_ID linux/amd64" ]]
+          docker load --input "$RUNNER_TEMP/release-image/image.tar"
+          if [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$SOURCE_IMAGE")" != "$IMAGE_ID linux/amd64" ]]; then
+            echo "::error::The artifact does not contain the tested linux/amd64 image."
+            exit 1
+          fi
       - uses: Azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -146,13 +144,11 @@ jobs:
             .id == "9a7e9255-7824-4c0d-a414-366f436f61dd" and
             .tenantId == "5a4de383-e76f-4737-9623-e6281d36d202"
           ' >/dev/null
-          registry=crskiregistrydevncus
-          tag="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          image="$registry.azurecr.io/ski-backend:$tag"
-          az acr login --name "$registry" --only-show-errors
-          docker tag "ski-school-ci/backend:$GITHUB_SHA" "$image"
-          docker push "$image"
-          digest=$(az acr repository show --name "$registry" --image "ski-backend:$tag" \
+          release="$IMAGE_REPOSITORY:$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker tag "$SOURCE_IMAGE" "$ACR_NAME.azurecr.io/$release"
+          docker push "$ACR_NAME.azurecr.io/$release"
+          digest=$(az acr repository show --name "$ACR_NAME" --image "$release" \
             --query digest --output tsv --only-show-errors)
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
