@@ -37,7 +37,7 @@ jobs:
       - id: build
         uses: ./.github/actions/build-image-artifact
         with:
-          image-kind: backend
+          image-name: backend
           context: src/backend
           dockerfile: src/backend/Dockerfile
           image-tag: ski-school-ci/backend:${{ github.sha }}
@@ -45,6 +45,14 @@ jobs:
           build-args: |
             PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
             PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io
+      - name: Check backend dependencies and startup
+        run: |
+          image="ski-school-ci/backend:$GITHUB_SHA"
+          docker run --rm --network none "$image" python -I -m pip check
+          docker run --rm --network none \
+            -e AI_GATEWAY_BASE_URL=https://example.invalid/models/openai/v1/ \
+            -e AI_GATEWAY_MODEL_ALIAS=ci-smoke \
+            "$image" python -I -c 'import runpy; runpy.run_path("main.py")["create_server"]()'
 
   validate:
     name: Validate backend Terraform offline
