@@ -26,8 +26,8 @@ inputs:
 
 outputs:
   image-id:
-    description: Image ID reported by the Docker build action.
-    value: ${{ steps.build.outputs.imageid }}
+    description: Docker image ID of the loaded image.
+    value: ${{ steps.load.outputs.image-id }}
   artifact-id:
     description: ID of the uploaded image artifact.
     value: ${{ steps.upload.outputs.artifact-id }}
@@ -68,7 +68,6 @@ runs:
     - uses: docker/setup-buildx-action@v4
 
     - name: Build and export image
-      id: build
       uses: docker/build-push-action@v7
       env:
         DOCKER_BUILD_RECORD_UPLOAD: 'false'
@@ -82,12 +81,17 @@ runs:
         outputs: type=docker,dest=${{ steps.prepare.outputs.output-directory }}/image.tar
 
     - name: Load image
+      id: load
       shell: bash
       env:
         OUTPUT_DIRECTORY: ${{ steps.prepare.outputs.output-directory }}
+        IMAGE_TAG: ${{ inputs.image-tag }}
       run: |
         set -euo pipefail
         docker load --input "$OUTPUT_DIRECTORY/image.tar"
+        # Buildx reports the config digest, which can differ from Docker's loaded image ID.
+        image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE_TAG")
+        printf 'image-id=%s\n' "$image_id" >> "$GITHUB_OUTPUT"
 
     - name: Upload image archive
       id: upload
