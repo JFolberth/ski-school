@@ -40,4 +40,3 @@ jobs:
       terraform-root: infra/logging
       artifact-prefix: logging-ci
       state-key: ski-school-logging.tfstate
-      require-existing-state: true

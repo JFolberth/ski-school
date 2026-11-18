@@ -45,7 +45,6 @@ jobs:
       state-key: ski-school-logging.tfstate
       artifact-prefix: logging-ci
       require-session-signing-key: false
-      require-existing-state: true
       publish-source: false
       environments: ${{ inputs.environments }}
 

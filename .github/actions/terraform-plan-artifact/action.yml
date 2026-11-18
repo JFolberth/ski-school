@@ -22,9 +22,6 @@ inputs:
   expected-resource-group:
     description: Resource group to verify for a root with guarded deployment; required for apply.
     default: ""
-  require-existing-state:
-    description: Require the logging root's existing resources to be present in remote state.
-    default: "false"
   apply:
     description: Apply the guarded saved plan; allowed only on a main push.
     default: "false"
@@ -40,7 +37,6 @@ runs:
         STATE_CONTAINER: ${{ inputs.state-container }}
         STATE_KEY: ${{ inputs.state-key }}
         REQUIRE_SIGNING_KEY: ${{ inputs.require-session-signing-key }}
-        REQUIRE_EXISTING_STATE: ${{ inputs.require-existing-state }}
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
       run: |
@@ -51,9 +47,7 @@ runs:
         if [[ "$REQUIRE_SIGNING_KEY" == true ]]; then
           : "${TF_VAR_session_signing_key:?Required frontend session signing key}"
         fi
-        if [[ ! "$APPLY" =~ ^(true|false)$ ||
-          ! "$REQUIRE_EXISTING_STATE" =~ ^(true|false)$ ||
-          ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
+        if [[ ! "$APPLY" =~ ^(true|false)$ || ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
           echo "::error::Invalid apply or environment configuration."
           exit 1
         fi
@@ -91,22 +85,6 @@ runs:
           echo "::error::Remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
           exit 1
         fi
-        if [[ "$REQUIRE_EXISTING_STATE" == true ]]; then
-          if ! terraform -chdir="$TF_ROOT" state list -no-color > "$DIRECTORY/state-addresses.txt" 2> "$DIRECTORY/state.log"; then
-            echo "::error::Cannot verify the existing logging Terraform state."
-            exit 1
-          fi
-          for address in \
-            module.resource_group.azapi_resource.this \
-            module.workspace.azapi_resource.this \
-            module.monitor_workspace.azapi_resource.this; do
-            if ! grep -Fxq "$address" "$DIRECTORY/state-addresses.txt"; then
-              echo "::error::The existing logging state is missing a required resource. Migrate and verify logging state before planning or applying."
-              exit 1
-            fi
-          done
-        fi
-
         if ! terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
           -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
           echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."

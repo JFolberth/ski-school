@@ -27,10 +27,6 @@ on:
       require-session-signing-key:
         type: boolean
         default: true
-      require-existing-state:
-        description: Require known root resources to exist in the selected remote state before planning.
-        type: boolean
-        default: false
       publish-source:
         description: Upload root and module sources in each plan job; orchestration workflows may publish a verified bundle separately.
         type: boolean
@@ -152,7 +148,6 @@ jobs:
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
           require-session-signing-key: ${{ inputs.require-session-signing-key }}
-          require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
         env:
           TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

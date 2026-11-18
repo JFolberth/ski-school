@@ -27,9 +27,8 @@ sign-in; Azure RBAC separately determines resource access.
 The logging CI/CD workflow uses the same `dev` GitHub Environment and OIDC
 identity as the existing Terraform workflows. Its remote state uses the
 environment-neutral `ski-school-logging.tfstate` key in each environment's
-isolated state account. Migrate the existing logging state to that key before
-deployment; the logging plan and deploy steps verify the root's existing
-resource addresses and stop when the selected state is empty or incomplete.
+isolated state account. The workflows use the existing remote backend and do
+not fall back to local state.
 
 ## Separate workload identities
 

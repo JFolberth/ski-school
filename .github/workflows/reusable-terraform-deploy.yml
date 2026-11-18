@@ -26,10 +26,6 @@ on:
         description: Repository-relative root included in the immutable source artifact.
         type: string
         default: infra/gateway
-      require-existing-state:
-        description: Require known root resources to exist in the selected remote state before applying.
-        type: boolean
-        default: false
       environments:
         description: Full verified target manifest exposed by successful main CI.
         type: string
@@ -202,6 +198,5 @@ jobs:
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
           require-session-signing-key: "false"
-          require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
