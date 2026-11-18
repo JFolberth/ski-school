@@ -305,7 +305,7 @@ runs:
                 "frontend_targets_match=\(try ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"), ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev")]) catch false)",
                 "image_repositories_match=\(try ([.variables.container_image_repository.value, .variables.bridge_image_repository.value] == ["ski-school/frontend", "ski-school/bridge"]) catch false)",
                 "managed_resource_changes=\([.resource_changes[]? | select(.mode == "managed") | "\(.address) [\(.change.actions | join(","))]"] | join(", "))"
-              ' "$DIRECTORY/plan.json" >> "$GITHUB_STEP_SUMMARY"; then
+              ' "$DIRECTORY/plan.json" | tee -a "$GITHUB_STEP_SUMMARY"; then
                 echo 'Plan diagnostics were unavailable.' >> "$GITHUB_STEP_SUMMARY"
               fi
             } 2>/dev/null
