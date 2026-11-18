@@ -83,9 +83,9 @@ Before enabling delivery:
    Foundry agent, invoke it, push to ACR, and manage the role assignments
    scoped to the gateway alias and App Insights component.
 3. Keep Azure access limited to trusted PRs. The shared OIDC identity has the
-   same Azure permissions in plan and release jobs, but the workflow only
-   runs publish and apply on pushes to `main`. Review the dev routing and
-   release impact before setting `BACKEND_RELEASE_ENABLED=true` in `dev`.
+   same Azure permissions in plan and release jobs, but only Backend CD
+   publishes and deploys after checks pass on a matching push to `main`.
+   Review the dev routing and release impact before merging.
 
 The state move does not resolve existing Foundry drift. If state and Foundry
 report different versions, review the first refreshed plan and keep the

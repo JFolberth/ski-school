@@ -45,15 +45,10 @@ jobs:
     outputs:
       digest: ${{ steps.push.outputs.digest }}
     steps:
-      - name: Require explicit release enablement
+      - name: Verify the image artifact ID
         env:
-          BACKEND_RELEASE_ENABLED: ${{ vars.BACKEND_RELEASE_ENABLED }}
           ARTIFACT_ID: ${{ needs.checks.outputs.image-artifact-id }}
         run: |
-          if [[ "$BACKEND_RELEASE_ENABLED" != true ]]; then
-            echo "::error::Backend release is not enabled. Complete the documented dev setup before permitting ACR writes."
-            exit 1
-          fi
           if [[ ! "$ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
             echo "::error::The image build must provide an artifact ID."
             exit 1
