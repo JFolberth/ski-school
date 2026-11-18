@@ -43,6 +43,11 @@ assignment outside the Foundry resource group, on the dev registry
 `crskiregistrydevncus`. The OIDC identity needs registry read access and
 role-assignment management at that registry scope to manage that grant.
 
+Backend, Foundry, gateway, logging, and registry CD skip Terraform apply when
+the fresh, verified deployment plan has no changes. The job summary records
+the skip. Output-only changes still apply, and a failed plan or target check
+still fails deployment.
+
 ## Separate workload identities
 
 ### Dev backend delivery
@@ -52,11 +57,12 @@ matching PR. Same-repository human PRs also run a live Terraform plan: the plan
 uses the latest active Foundry version's ACR digest, not a PR image or a stale
 state output. Fork and bot PRs do not get Azure credentials. On `main`, the
 workflow verifies the tested image artifact, publishes it to `ski-backend`,
-then freshly plans and applies the verified Terraform source using the exact
-registry digest. It checks readiness and invokes a session pinned to the
-resulting version. No Azure Container App or routing rules are changed. Foundry
-can route dev traffic to the latest version before the smoke check finishes
-when the endpoint uses its default selector.
+then freshly plans the verified Terraform source using the exact registry
+digest and applies it if there are changes. It checks readiness and invokes a
+session pinned to the version recorded in Terraform state, even when apply is
+skipped. No Azure Container App or routing rules are changed. Foundry can
+route dev traffic to the latest version before the smoke check finishes when
+the endpoint uses its default selector.
 
 Before enabling delivery:
 

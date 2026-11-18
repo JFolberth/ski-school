@@ -26,7 +26,7 @@ inputs:
     description: Resource group to verify for a root with guarded deployment; required for apply.
     default: ""
   apply:
-    description: Apply the guarded saved plan; allowed only on a main push.
+    description: Apply the guarded saved plan if it has changes; allowed only on a main push.
     default: "false"
   image-digest:
     description: Published container image digest for apply when the Terraform root requires one.
@@ -36,7 +36,7 @@ inputs:
     default: ""
 outputs:
   backend-release:
-    description: Non-secret backend version, image and target metadata after apply.
+    description: Non-secret backend version, image and target metadata after apply or a verified no-op deployment.
     value: ${{ steps.terraform.outputs.backend-release }}
 runs:
   using: composite
@@ -146,11 +146,17 @@ runs:
           fi
           export TF_VAR_container_image_digest="$IMAGE_DIGEST"
         fi
-        if ! terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
-          -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
-          echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
-          exit 1
-        fi
+        plan_status=0
+        terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
+          -detailed-exitcode -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" \
+          > "$DIRECTORY/plan.log" 2>&1 || plan_status=$?
+        case "$plan_status" in
+          0|2) ;;
+          *)
+            echo "::error::Terraform plan failed. Raw diagnostics are intentionally withheld."
+            exit 1
+            ;;
+        esac
         if ! terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.json" 2> "$DIRECTORY/show.log"; then
           echo "::error::Cannot read the private saved plan."
@@ -341,12 +347,15 @@ runs:
         echo "Terraform plan verified. Private plan and diagnostics are not published." >> "$GITHUB_STEP_SUMMARY"
 
         if [[ "$APPLY" == true ]]; then
-          if ! terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=60s -no-color \
+          if [[ "$plan_status" == 0 ]]; then
+            echo "Terraform apply skipped: the verified plan has no changes." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=60s -no-color \
             "$DIRECTORY/terraform.tfplan" > "$DIRECTORY/apply.log" 2>&1; then
+            echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
+          else
             echo "::error::Terraform apply failed. Inspect the target securely before retrying; raw diagnostics are withheld."
             exit 1
           fi
-          echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
           if [[ "$TF_ROOT" == infra/backend ]]; then
             if ! release=$(terraform -chdir="$TF_ROOT" output -json 2>"$DIRECTORY/output.log" | jq -ce '
               {agent: .agent_name.value, version: .candidate_version.value, image: .image_uri.value, endpoint: .project_endpoint.value} |
@@ -355,7 +364,7 @@ runs:
                 .image == ("crskiregistrydevncus.azurecr.io/ski-backend@" + env.TF_VAR_container_image_digest) and
                 .endpoint == "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus"
               )'); then
-              echo "::error::Apply finished but did not return valid backend release metadata."
+              echo "::error::Current Terraform state did not return valid backend release metadata."
               exit 1
             fi
             printf 'backend-release=%s\n' "$release" >> "$GITHUB_OUTPUT"
