@@ -19,6 +19,9 @@ inputs:
   require-session-signing-key:
     description: Require the frontend runtime secret for frontend plans.
     default: "true"
+  require-existing-state:
+    description: Require an existing authenticated backend blob before initialization; never migrate state automatically.
+    default: "false"
   expected-resource-group:
     description: Resource group to verify for a root with guarded deployment; required for apply.
     default: ""
@@ -37,6 +40,7 @@ runs:
         STATE_CONTAINER: ${{ inputs.state-container }}
         STATE_KEY: ${{ inputs.state-key }}
         REQUIRE_SIGNING_KEY: ${{ inputs.require-session-signing-key }}
+        REQUIRE_EXISTING_STATE: ${{ inputs.require-existing-state }}
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
       run: |
@@ -47,8 +51,9 @@ runs:
         if [[ "$REQUIRE_SIGNING_KEY" == true ]]; then
           : "${TF_VAR_session_signing_key:?Required frontend session signing key}"
         fi
-        if [[ ! "$APPLY" =~ ^(true|false)$ || ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
-          echo "::error::Invalid apply or environment configuration."
+        if [[ ! "$APPLY" =~ ^(true|false)$ || ! "$REQUIRE_EXISTING_STATE" =~ ^(true|false)$ ||
+          ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
+          echo "::error::Invalid apply, existing-state, or environment configuration."
           exit 1
         fi
         if [[ "$APPLY" == true && ( "$GITHUB_EVENT_NAME" != push ||
@@ -74,6 +79,18 @@ runs:
           echo "Resource group: ${EXPECTED_RESOURCE_GROUP:-selected by root inputs}. Backend: $STATE_ACCOUNT/$STATE_CONTAINER/$STATE_KEY."
           echo "Apply enabled: $APPLY. Azure changes may incur charges; Terraform does not provide a cost estimate."
         } >> "$GITHUB_STEP_SUMMARY"
+        if [[ "$REQUIRE_EXISTING_STATE" == true ]]; then
+          if ! state_exists=$(az storage blob exists --auth-mode login \
+            --account-name "$STATE_ACCOUNT" --container-name "$STATE_CONTAINER" \
+            --name "$STATE_KEY" --query exists --output tsv --only-show-errors); then
+            echo "::error::Cannot verify the required state blob. Check identity-based backend access."
+            exit 1
+          fi
+          if [[ "$state_exists" != true ]]; then
+            echo "::error::Required state blob is missing. Complete the separately approved state migration before running this pipeline."
+            exit 1
+          fi
+        fi
         umask 077
         DIRECTORY=$(mktemp -d "$RUNNER_TEMP/terraform-plan.XXXXXX")
         trap 'rm -rf -- "$DIRECTORY"' EXIT

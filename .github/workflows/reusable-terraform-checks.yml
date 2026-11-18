@@ -1,13 +1,28 @@
-name: Reusable gateway checks and source
+name: Reusable Terraform checks and source
 
 on:
   workflow_call:
     inputs:
-      environments:
-        description: Environment targets shared by source publication and Terraform checks.
+      terraform-root:
+        description: Repository-relative Terraform root to check and publish.
         type: string
-        default: >-
-          [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
+        required: true
+      state-key:
+        description: Environment-neutral state blob key for this root.
+        type: string
+        required: true
+      artifact-prefix:
+        description: Root-specific prefix for source artifacts.
+        type: string
+        required: true
+      environments:
+        description: Environment and backend targets shared by source publication and Terraform checks.
+        type: string
+        required: true
+      require-existing-state:
+        description: Refuse plans against a missing state blob.
+        type: boolean
+        default: false
     outputs:
       artifact-id:
         description: Immutable root source artifact from successful checks in this run.
@@ -34,22 +49,23 @@ jobs:
     uses: ./.github/workflows/reusable-terraform-modules.yml
 
   checks:
-    name: Gateway Terraform checks
+    name: Terraform checks
     permissions:
       contents: read
       id-token: write
     uses: ./.github/workflows/reusable-terraform-plan.yml
     with:
-      terraform-root: infra/gateway
+      terraform-root: ${{ inputs.terraform-root }}
       module-path: infra/modules
-      state-key: ski-school-gateway.tfstate
-      artifact-prefix: gateway-ci
+      state-key: ${{ inputs.state-key }}
+      artifact-prefix: ${{ inputs.artifact-prefix }}
       require-session-signing-key: false
+      require-existing-state: ${{ inputs.require-existing-state }}
       publish-source: false
       environments: ${{ inputs.environments }}
 
   source:
-    name: Publish gateway source
+    name: Publish Terraform source
     if: >-
       ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'pull_request' &&
@@ -70,7 +86,7 @@ jobs:
         id: source
         uses: ./.github/actions/terraform-source-artifact
         with:
-          terraform-root: infra/gateway
-          name: gateway-ci-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
-          state-key: ski-school-gateway.tfstate
+          terraform-root: ${{ inputs.terraform-root }}
+          name: ${{ inputs.artifact-prefix }}-terraform-source-${{ github.run_id }}-${{ github.run_attempt }}
+          state-key: ${{ inputs.state-key }}
           environments: ${{ inputs.environments }}

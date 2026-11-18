@@ -21,6 +21,7 @@ crash.*.log
 !infra/foundry/dev.tfvars
 !infra/gateway/dev.tfvars
 !infra/logging/dev.tfvars
+!infra/registry/dev.tfvars
 
 # Local backend initialization inputs
 *.tfbackend

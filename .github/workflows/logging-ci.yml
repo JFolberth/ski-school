@@ -21,4 +21,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/reusable-logging-checks.yml
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/logging
+      state-key: ski-school-logging.tfstate
+      artifact-prefix: logging-ci
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-logs-dev-ncus"}]
