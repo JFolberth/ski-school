@@ -41,10 +41,6 @@ on:
         description: Immutable ACR digest from the backend image publication job.
         type: string
         default: ''
-    secrets:
-      BACKEND_GATEWAY_BASE_URL:
-        description: Reviewed gateway endpoint supplied by the backend release environment.
-        required: false
 
 permissions:
   contents: read
@@ -215,8 +211,6 @@ jobs:
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
           backend-image-digest: ${{ inputs.backend-image-digest }}
-        env:
-          TF_VAR_gateway_base_url: ${{ inputs.terraform-root == 'infra/backend' && secrets.BACKEND_GATEWAY_BASE_URL || '' }}
       - uses: actions/checkout@v7
         if: inputs.terraform-root == 'infra/backend'
         with:

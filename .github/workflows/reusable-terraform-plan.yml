@@ -36,9 +36,6 @@ on:
         type: boolean
         default: true
     secrets:
-      BACKEND_GATEWAY_BASE_URL:
-        description: Reviewed gateway endpoint supplied by the backend plan environment.
-        required: false
       FRONTEND_SESSION_SIGNING_KEY:
         description: Existing ephemeral session key; required only for frontend plans.
         required: false
@@ -160,4 +157,3 @@ jobs:
           expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
         env:
           TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
-          TF_VAR_gateway_base_url: ${{ inputs.terraform-root == 'infra/backend' && secrets.BACKEND_GATEWAY_BASE_URL || '' }}

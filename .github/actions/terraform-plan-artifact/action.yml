@@ -112,7 +112,6 @@ runs:
           exit 1
         fi
         if [[ "$TF_ROOT" == infra/backend ]]; then
-          : "${TF_VAR_gateway_base_url:?Configure the backend gateway URL in the GitHub Environment}"
           if [[ "$APPLY" == true ]]; then
             export TF_VAR_container_image_digest="$BACKEND_IMAGE_DIGEST"
           else

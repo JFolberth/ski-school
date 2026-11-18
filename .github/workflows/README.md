@@ -71,7 +71,7 @@ Before enabling delivery:
    refuses a missing destination.
 2. Plan and release use the existing `dev` GitHub Environment and its
    `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` variables.
-   Add `BACKEND_GATEWAY_BASE_URL` as a secret in `dev`. Verify that the
+   The public gateway URL is configured in `infra/backend/dev.tfvars`. Verify that the
    shared OIDC identity can lease the state blob, read and manage the
    Foundry agent, invoke it, push to ACR, and manage the role assignments
    scoped to the gateway alias and App Insights component.
