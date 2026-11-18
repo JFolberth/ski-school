@@ -213,6 +213,13 @@ variable "subscription_id" {
   }
 }
 
+variable "telemetry_payload_capture" {
+  type        = bool
+  description = "Capture prompts, completions, and tool input/output; no built-in PII redaction is applied."
+  default     = false
+  nullable    = false
+}
+
 variable "tags" {
   type        = map(string)
   description = "Non-secret additional tags; environment and managed_by are provider-enforced."

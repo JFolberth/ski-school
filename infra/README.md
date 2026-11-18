@@ -77,8 +77,10 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
    public backend routing and a system-assigned identity. Azure rejected the
    example `AIGateway` SKU during the first apply and required `Standard`;
    the approved recovery created the gateway using that SKU. The gateway now
-   has Foundry access and a registered model and alias. Caller authorization,
-   cross-region inference verification, and gateway telemetry remain deferred.
+   has Foundry access, a registered model and alias, and a configured OpenTelemetry
+   exporter. Dev explicitly enables payload capture; end-to-end telemetry ingestion
+   and cross-region inference remain unverified, and caller authorization remains
+   deferred.
 
 ## Initial identity and role boundaries
 
@@ -106,7 +108,10 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
   tracing guidance specifies a separate publisher grant
   for the hosted-agent identity when its code emits traces; that grant remains
   deferred. Traces can contain prompts, outputs and tool data; review redaction
-  and retention before enabling them.
+  and retention before enabling them. The gateway exporter also supports payload
+  capture; the dev setting captures prompts, completions, and tool input/output,
+  with no built-in PII redaction. Review the telemetry destination's access and
+  retention controls.
 
 ## Deployment notes and recovery
 
