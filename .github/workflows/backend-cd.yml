@@ -11,7 +11,13 @@ on:
       - .github/workflows/backend-cd.yml
       - .github/workflows/reusable-backend-checks.yml
       - .github/workflows/reusable-terraform-*.yml
-      - .github/actions/**
+      - .github/actions/backend-agent-release/**
+      - .github/actions/build-image-artifact/**
+      - .github/actions/terraform-fmt/**
+      - .github/actions/terraform-plan-artifact/**
+      - .github/actions/terraform-source-artifact/**
+      - .github/actions/terraform-validate/**
+      - .github/actions/upload-artifact/**
 
 permissions:
   contents: read

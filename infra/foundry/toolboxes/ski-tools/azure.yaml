@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: ski-tools
+requiredVersions:
+  azd: ">= 1.37.0"
+  extensions:
+    azure.ai.toolboxes: ">= 1.1.0 < 2.0.0"
+services:
+  ski-tools:
+    host: azure.ai.toolbox
+    description: Shared public-web research tools for Michigan skiing.
+    hooks:
+      postdeploy:
+        - shell: sh
+          run: |
+            set -eu
+            project_endpoint="$(azd env get-value FOUNDRY_PROJECT_ENDPOINT)"
+            endpoint="$(azd env get-value TOOLBOX_SKI_TOOLS_MCP_ENDPOINT)"
+            version="$(jq -ner --arg endpoint "$endpoint" --arg project "$project_endpoint" '
+              [$endpoint
+                | capture("^(?<project>https://[^/?#@[:space:]]+/api/projects/[^/?#[:space:]]+)/toolboxes/ski-tools/versions/(?<version>[1-9][0-9]*)/mcp\\?api-version=v1$")
+                | select(.project == ($project | rtrimstr("/")))
+                | .version]
+              | if length == 1 then .[0] else error("Expected the deployed ski-tools version endpoint in the configured Foundry project") end
+            ')"
+            azd ai toolbox publish ski-tools "$version" --project-endpoint "$project_endpoint" --no-prompt
+            versions="$(azd ai toolbox versions list ski-tools --project-endpoint "$project_endpoint" --output json --no-prompt)"
+            printf '%s\n' "$versions" |
+              jq -e --arg version "$version" '
+                .default_version == $version or error("The deployed ski-tools version is not the default")
+              ' > /dev/null
+          interactive: false
+    tools:
+      - type: web_search
+        description: Search the public web for Michigan skiing information and return sources; search results alone do not establish current resort conditions.

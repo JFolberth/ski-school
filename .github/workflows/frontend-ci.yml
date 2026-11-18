@@ -11,7 +11,12 @@ on:
       - .github/workflows/frontend-cd.yml
       - .github/workflows/reusable-frontend-*.yml
       - .github/workflows/reusable-terraform-*.yml
-      - .github/actions/**
+      - .github/actions/build-image-artifact/**
+      - .github/actions/terraform-fmt/**
+      - .github/actions/terraform-plan-artifact/**
+      - .github/actions/terraform-source-artifact/**
+      - .github/actions/terraform-validate/**
+      - .github/actions/upload-artifact/**
 permissions:
   contents: read
 

@@ -1,0 +1,158 @@
+name: Publish Foundry toolbox source
+description: Discover folder-defined toolboxes and publish a validated immutable release.
+inputs:
+  toolbox-root:
+    description: Repository-relative parent of toolbox folders.
+    default: infra/foundry/toolboxes
+  name:
+    description: Run-specific artifact name.
+    required: true
+  retention-days:
+    description: Artifact retention in days.
+    default: "7"
+outputs:
+  artifact-id:
+    description: Immutable toolbox source artifact ID.
+    value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-digest:
+    description: SHA-256 digest of the uploaded archive.
+    value: ${{ steps.upload.outputs.artifact-digest }}
+  artifact-name:
+    description: Published artifact name, retained across deployment reruns.
+    value: ${{ inputs.name }}
+  publishing-attempt:
+    description: Workflow attempt that published this artifact.
+    value: ${{ steps.source.outputs.publishing-attempt }}
+runs:
+  using: composite
+  steps:
+    - name: Discover and stage toolbox source
+      id: source
+      shell: bash
+      env:
+        TOOLBOX_ROOT: ${{ inputs.toolbox-root }}
+        ARTIFACT_NAME: ${{ inputs.name }}
+      run: |
+        set -euo pipefail
+        directory=$(mktemp -d "$RUNNER_TEMP/toolbox-source.XXXXXX")
+        printf 'directory=%s\npublishing-attempt=%s\n' \
+          "$directory" "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+        parser=python3
+        if ! python3 -c 'import yaml'; then
+          python3 -m venv "$directory/parser"
+          "$directory/parser/bin/python" -m pip install --quiet --disable-pip-version-check PyYAML==6.0.3
+          parser="$directory/parser/bin/python"
+        fi
+        export SOURCE_DIRECTORY="$directory/release"
+        mkdir -p "$SOURCE_DIRECTORY"
+        "$parser" - <<'PY'
+        import json
+        import os
+        from pathlib import Path
+        import re
+        import shutil
+        import subprocess
+        import yaml
+
+        class UniqueLoader(yaml.SafeLoader):
+            def construct_mapping(self, node, deep=False):
+                result = {}
+                for key_node, value_node in node.value:
+                    key = self.construct_object(key_node, deep=deep)
+                    if key in result:
+                        raise ValueError(f"Duplicate YAML key: {key}")
+                    result[key] = self.construct_object(value_node, deep=deep)
+                return result
+
+        workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+        destination = Path(os.environ["SOURCE_DIRECTORY"])
+        root = Path(os.environ["TOOLBOX_ROOT"])
+        if (root.is_absolute() or ".." in root.parts or root.as_posix() in ("", ".")
+                or root.as_posix() != os.environ["TOOLBOX_ROOT"]
+                or (workspace / root).resolve() != workspace / root
+                or not (workspace / root).is_dir()):
+            raise SystemExit("Toolbox root must be a canonical repository directory without symlinks.")
+        if subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=workspace, text=True).strip() != os.environ["GITHUB_SHA"]:
+            raise SystemExit("Toolbox publisher checkout does not match the workflow revision.")
+        tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=workspace).decode().split("\0")
+        manifests = sorted(
+            path for path in tracked if path
+            and Path(path).name == "azure.yaml" and Path(path).parent.parent == root
+        )
+        for folder in (workspace / root).iterdir():
+            if folder.is_symlink() or (folder.is_dir() and
+                    (root / folder.name / "azure.yaml").as_posix() not in manifests):
+                raise SystemExit("Every toolbox folder must contain a tracked azure.yaml and cannot be a symlink.")
+        if not manifests:
+            raise SystemExit("No folder-defined toolboxes were found.")
+        toolboxes = []
+        names = set()
+        files = []
+        executable_files = []
+        allowed_suffixes = {".yaml", ".yml", ".json", ".sh", ".py", ".md", ".txt"}
+        for manifest in manifests:
+            folder = Path(manifest).parent
+            if not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", folder.name):
+                raise SystemExit("Toolbox folders must have canonical lowercase names.")
+            selected = sorted(path for path in tracked if path and Path(path).is_relative_to(folder))
+            for path in selected:
+                relative = Path(path).relative_to(folder)
+                source = workspace / path
+                if (any(part.startswith(".") or part == "__pycache__" for part in relative.parts)
+                        or relative.suffix not in allowed_suffixes
+                        or source.is_symlink() or source.resolve() != source or not source.is_file()):
+                    raise SystemExit(f"Unapproved toolbox source file: {path}")
+                target = destination / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                if source.stat().st_mode & 0o111:
+                    executable_files.append(path)
+            definition = yaml.load((destination / manifest).read_text(), Loader=UniqueLoader)
+            services = definition.get("services") if isinstance(definition, dict) else None
+            if (not isinstance(services, dict) or len(services) != 1
+                    or not isinstance(next(iter(services.values())), dict)):
+                raise SystemExit(f"Expected exactly one toolbox service in {manifest}.")
+            name, service = next(iter(services.items()))
+            if (not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", name)
+                    or service.get("host") != "azure.ai.toolbox" or name in names):
+                raise SystemExit(f"Invalid or duplicate toolbox service in {manifest}.")
+            if "infra" in definition or "project" in service:
+                raise SystemExit("Toolbox releases cannot provision infrastructure or use an external service project.")
+            names.add(name)
+            toolboxes.append({"directory": folder.as_posix(), "name": name})
+            files.extend(selected)
+        provenance = {
+            "repository": os.environ["GITHUB_REPOSITORY"],
+            "sha": os.environ["GITHUB_SHA"],
+            "run_id": os.environ["GITHUB_RUN_ID"],
+            "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+            "artifact_name": os.environ["ARTIFACT_NAME"],
+            "toolbox_root": root.as_posix(),
+            "toolboxes": toolboxes,
+            "files": sorted(files),
+            "executable_files": sorted(executable_files),
+        }
+        (destination / "toolboxes-provenance.json").write_text(json.dumps(provenance, sort_keys=True) + "\n")
+        PY
+
+    - name: Publish toolbox release
+      id: upload
+      uses: ./.github/actions/upload-artifact
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ steps.source.outputs.directory }}/release
+        retention-days: ${{ inputs.retention-days }}
+
+    - name: Remove staged source
+      if: ${{ always() && steps.source.outputs.directory != '' }}
+      shell: bash
+      env:
+        DIRECTORY: ${{ steps.source.outputs.directory }}
+      run: |
+        set -euo pipefail
+        if [[ -L "$DIRECTORY" || "${DIRECTORY##*/}" != toolbox-source.* ||
+          "$(dirname -- "$DIRECTORY")" != "$(cd -- "$RUNNER_TEMP" && pwd -P)" ]]; then
+          echo "::error::Refusing cleanup outside the owned toolbox source directory."
+          exit 1
+        fi
+        rm -rf -- "$DIRECTORY"

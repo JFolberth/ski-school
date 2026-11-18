@@ -6,6 +6,12 @@ on:
     paths:
       - infra/foundry/**
       - infra/modules/**
+      - .github/workflows/foundry-ci.yml
+      - .github/workflows/foundry-cd.yml
+      - .github/workflows/reusable-foundry-toolbox-source.yml
+      - .github/actions/foundry-toolbox-source-artifact/**
+      - .github/actions/foundry-toolbox-deploy/**
+      - .github/actions/upload-artifact/**
 
 permissions:
   contents: read
@@ -16,6 +22,10 @@ concurrency:
 
 # Path-filtered workflows must not be unconditional required checks for all PRs.
 jobs:
+  toolboxes:
+    name: Foundry toolbox source
+    uses: ./.github/workflows/reusable-foundry-toolbox-source.yml
+
   checks:
     name: Foundry checks
     permissions:

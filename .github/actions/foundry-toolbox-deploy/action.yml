@@ -1,0 +1,275 @@
+name: Deploy Foundry toolbox artifact
+description: Verify an immutable toolbox release and deploy every folder to an existing Foundry project.
+inputs:
+  artifact-id:
+    description: Exact toolbox artifact ID from this workflow run.
+    required: true
+  artifact-digest:
+    description: SHA-256 archive digest returned by source publication.
+    required: true
+  artifact-name:
+    description: Exact artifact name returned by source publication.
+    required: true
+  publishing-attempt:
+    description: Original source publication attempt, not the current deployment attempt.
+    required: true
+  toolbox-root:
+    description: Repository-relative toolbox root expected in the release.
+    default: infra/foundry/toolboxes
+  environment:
+    description: Local azd environment name.
+    required: true
+  tenant-id:
+    description: Expected tenant of the authenticated deployment identity.
+    required: true
+  project-id:
+    description: Existing Foundry project ARM ID.
+    required: true
+outputs:
+  toolboxes:
+    description: JSON array of verified toolbox names, versions and version-specific endpoints.
+    value: ${{ steps.deploy.outputs.toolboxes }}
+runs:
+  using: composite
+  steps:
+    - name: Download and verify the pipeline's toolbox artifact
+      id: source
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        ARTIFACT_ID: ${{ inputs.artifact-id }}
+        ARTIFACT_DIGEST: ${{ inputs.artifact-digest }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        PUBLISHING_ATTEMPT: ${{ inputs.publishing-attempt }}
+        TOOLBOX_ROOT: ${{ inputs.toolbox-root }}
+      run: |
+        set -euo pipefail
+        directory=$(mktemp -d "$RUNNER_TEMP/toolbox-deploy.XXXXXX")
+        printf 'directory=%s\n' "$directory" >> "$GITHUB_OUTPUT"
+        export RELEASE_DIRECTORY="$directory/release"
+        export ARCHIVE="$directory/source.zip"
+        export GH_HOST="${GITHUB_SERVER_URL#https://}"
+        if [[ ! "$ARTIFACT_ID" =~ ^[0-9]+$ ||
+          ! "$ARTIFACT_DIGEST" =~ ^[a-f0-9]{64}$ ||
+          ! "$PUBLISHING_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+          echo "::error::Source publication must supply an artifact ID, SHA-256 digest and publishing attempt."
+          exit 1
+        fi
+        if ! gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID" |
+          jq -e --arg id "$ARTIFACT_ID" --arg digest "$ARTIFACT_DIGEST" --arg name "$ARTIFACT_NAME" '
+            (.id | tostring) == $id and .name == $name and .expired == false and
+            .digest == ("sha256:" + $digest) and
+            (.workflow_run.id | tostring) == env.GITHUB_RUN_ID and
+            .workflow_run.head_sha == env.GITHUB_SHA and .workflow_run.head_branch == "main"
+          ' > /dev/null; then
+          echo "::error::Toolbox artifact metadata does not match the successful source publication."
+          exit 1
+        fi
+        gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID/zip" > "$ARCHIVE"
+        if [[ "$(sha256sum "$ARCHIVE" | cut -d ' ' -f 1)" != "$ARTIFACT_DIGEST" ]]; then
+          echo "::error::Toolbox artifact archive failed SHA-256 verification."
+          exit 1
+        fi
+        python3 - <<'PY'
+        import json
+        import os
+        from pathlib import Path, PurePosixPath
+        import re
+        import stat
+        from zipfile import ZipFile
+
+        destination = Path(os.environ["RELEASE_DIRECTORY"])
+        root = PurePosixPath(os.environ["TOOLBOX_ROOT"])
+        if (root.is_absolute() or ".." in root.parts or root.as_posix() in ("", ".")
+                or root.as_posix() != os.environ["TOOLBOX_ROOT"]):
+            raise SystemExit("Expected a canonical repository-relative toolbox root.")
+        with ZipFile(os.environ["ARCHIVE"]) as archive:
+            entries = {}
+            for entry in archive.infolist():
+                path = PurePosixPath(entry.filename)
+                if (path.is_absolute() or ".." in path.parts or "\\" in entry.filename
+                        or stat.S_ISLNK(entry.external_attr >> 16)):
+                    raise SystemExit("Toolbox archive contains an unsafe path or symlink.")
+                if entry.is_dir():
+                    continue
+                if path.as_posix() != entry.filename or entry.filename in entries:
+                    raise SystemExit("Toolbox archive contains noncanonical or duplicate files.")
+                entries[entry.filename] = entry
+            if "toolboxes-provenance.json" not in entries:
+                raise SystemExit("Toolbox archive has no release manifest.")
+            manifest = json.loads(archive.read(entries["toolboxes-provenance.json"]))
+            expected = {
+                "repository": os.environ["GITHUB_REPOSITORY"],
+                "sha": os.environ["GITHUB_SHA"],
+                "run_id": os.environ["GITHUB_RUN_ID"],
+                "run_attempt": os.environ["PUBLISHING_ATTEMPT"],
+                "artifact_name": os.environ["ARTIFACT_NAME"],
+                "toolbox_root": root.as_posix(),
+            }
+            if any(manifest.get(key) != value for key, value in expected.items()):
+                raise SystemExit("Toolbox release provenance does not match the publishing job.")
+            files = manifest.get("files")
+            executable_files = manifest.get("executable_files")
+            toolboxes = manifest.get("toolboxes")
+            if (not isinstance(files, list) or not all(isinstance(path, str) for path in files)
+                    or files != sorted(set(files))
+                    or set(entries) != set(files) | {"toolboxes-provenance.json"}
+                    or not isinstance(toolboxes, list) or not toolboxes):
+                raise SystemExit("Toolbox archive does not match its release inventory.")
+            if (not isinstance(executable_files, list)
+                    or not all(isinstance(path, str) for path in executable_files)
+                    or executable_files != sorted(set(executable_files))
+                    or not set(executable_files).issubset(files)):
+                raise SystemExit("Invalid executable file inventory.")
+            names = set()
+            folders = set()
+            for toolbox in toolboxes:
+                if not isinstance(toolbox, dict):
+                    raise SystemExit("Invalid toolbox release entry.")
+                name = toolbox.get("name")
+                directory = toolbox.get("directory")
+                if (not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", name)
+                        or not isinstance(directory, str)):
+                    raise SystemExit("Invalid toolbox service name or directory.")
+                folder = PurePosixPath(directory)
+                if (folder.parent != root or folder.as_posix() != directory
+                        or not re.fullmatch(r"[a-z][a-z0-9-]{0,62}", folder.name)
+                        or name in names or directory in folders
+                        or f"{directory}/azure.yaml" not in files):
+                    raise SystemExit("Toolbox directories/services must be unique immediate children of the release root.")
+                names.add(name)
+                folders.add(directory)
+            if toolboxes != sorted(toolboxes, key=lambda toolbox: toolbox["directory"]):
+                raise SystemExit("Toolbox release inventory must be sorted.")
+            allowed_suffixes = {".yaml", ".yml", ".json", ".sh", ".py", ".md", ".txt"}
+            for filename in files:
+                path = PurePosixPath(filename)
+                if (not any(path.is_relative_to(folder) for folder in folders)
+                        or any(part.startswith(".") or part == "__pycache__" for part in path.relative_to(root).parts)
+                        or path.suffix not in allowed_suffixes):
+                    raise SystemExit("Toolbox release contains an unapproved source file.")
+            for filename, entry in entries.items():
+                target = destination / filename
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(archive.read(entry))
+                target.chmod(0o755 if filename in executable_files else 0o644)
+        PY
+
+    - name: Verify the existing project and deployment identity
+      id: target
+      shell: bash
+      env:
+        ENVIRONMENT_NAME: ${{ inputs.environment }}
+        TENANT_ID: ${{ inputs.tenant-id }}
+        PROJECT_ID: ${{ inputs.project-id }}
+      run: |
+        set -euo pipefail
+        if [[ ! "$ENVIRONMENT_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ||
+          ! "$TENANT_ID" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ||
+          ! "$PROJECT_ID" =~ ^/subscriptions/([0-9a-fA-F-]{36})/resourceGroups/([A-Za-z0-9._-]+)/providers/Microsoft\.CognitiveServices/accounts/([A-Za-z0-9._-]+)/projects/([A-Za-z0-9._-]+)$ ]]; then
+          echo "::error::Expected a valid environment, tenant and Foundry project ARM ID."
+          exit 1
+        fi
+        subscription="${BASH_REMATCH[1]}"
+        resource_group="${BASH_REMATCH[2]}"
+        if ! az account show --output json --only-show-errors |
+          jq -e --arg subscription "$subscription" --arg tenant "$TENANT_ID" '
+            (.id | ascii_downcase) == ($subscription | ascii_downcase) and
+            (.tenantId | ascii_downcase) == ($tenant | ascii_downcase)
+          ' > /dev/null; then
+          echo "::error::The Azure login does not match the approved toolbox tenant and subscription."
+          exit 1
+        fi
+        project=$(az rest --method get \
+          --url "https://management.azure.com$PROJECT_ID?api-version=2026-05-15-preview" \
+          --query '{id:id,location:location,endpoints:properties.endpoints}' \
+          --output json --only-show-errors)
+        if ! jq -e --arg id "$PROJECT_ID" '
+          (.id | ascii_downcase) == ($id | ascii_downcase) and
+          (.location | strings | test("^[a-z0-9]+$")) and
+          (.endpoints["AI Foundry API"] | strings |
+            test("^https://[^/?#@[:space:]]+/api/projects/[^/?#[:space:]]+/?$"))
+        ' <<< "$project" > /dev/null; then
+          echo "::error::Foundry project lookup returned an unexpected ID, location or endpoint."
+          exit 1
+        fi
+        endpoint=$(jq -er '.endpoints["AI Foundry API"] | rtrimstr("/")' <<< "$project")
+        location=$(jq -er .location <<< "$project")
+        printf 'project-endpoint=%s\nsubscription=%s\nresource-group=%s\nlocation=%s\n' \
+          "$endpoint" "$subscription" "$resource_group" "$location" >> "$GITHUB_OUTPUT"
+
+    - name: Install Azure Developer CLI
+      uses: Azure/setup-azd@v2
+      with:
+        version: 1.38.0
+
+    - name: Deploy and verify every packaged toolbox
+      id: deploy
+      shell: bash
+      env:
+        RELEASE_DIRECTORY: ${{ steps.source.outputs.directory }}/release
+        ENVIRONMENT_NAME: ${{ inputs.environment }}
+        TENANT_ID: ${{ inputs.tenant-id }}
+        PROJECT_ENDPOINT: ${{ steps.target.outputs.project-endpoint }}
+        SUBSCRIPTION_ID: ${{ steps.target.outputs.subscription }}
+        RESOURCE_GROUP: ${{ steps.target.outputs.resource-group }}
+        LOCATION: ${{ steps.target.outputs.location }}
+        AZD_AGENT_SKIP_ROLE_ASSIGNMENTS: "true"
+      run: |
+        set -euo pipefail
+        azd extension install azure.ai.toolboxes --version 1.1.0 --no-prompt
+        azd config set auth.useAzCliAuth true
+        printf '### Foundry toolboxes\n\n| Toolbox | Default version |\n| --- | --- |\n' >> "$GITHUB_STEP_SUMMARY"
+        results="$RELEASE_DIRECTORY/deployment-results.jsonl"
+        : > "$results"
+        jq -er '.toolboxes[] | [.directory, .name] | @tsv' \
+          "$RELEASE_DIRECTORY/toolboxes-provenance.json" > "$RELEASE_DIRECTORY/toolboxes.tsv"
+        while IFS=$'\t' read -r relative name; do
+          echo "Deploying toolbox $name"
+          directory="$RELEASE_DIRECTORY/$relative"
+          azd env new "$ENVIRONMENT_NAME" --cwd "$directory" --no-prompt \
+            --subscription "$SUBSCRIPTION_ID" --location "$LOCATION"
+          azd env set --cwd "$directory" --environment "$ENVIRONMENT_NAME" \
+            "AZURE_TENANT_ID=$TENANT_ID" "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" \
+            "FOUNDRY_PROJECT_ENDPOINT=$PROJECT_ENDPOINT" "AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT"
+          azd deploy "$name" --cwd "$directory" --environment "$ENVIRONMENT_NAME" --no-prompt
+          normalized=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+          endpoint=$(azd env get-value "TOOLBOX_${normalized}_MCP_ENDPOINT" \
+            --cwd "$directory" --environment "$ENVIRONMENT_NAME")
+          prefix="$PROJECT_ENDPOINT/toolboxes/$name/versions/"
+          suffix="${endpoint#"$prefix"}"
+          if [[ "$endpoint" != "$prefix"* ||
+            ! "$suffix" =~ ^([1-9][0-9]*)/mcp\?api-version=v1$ ]]; then
+            echo "::error::Deployment did not return a version-specific endpoint for toolbox $name."
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          versions=$(azd ai toolbox versions list "$name" \
+            --project-endpoint "$PROJECT_ENDPOINT" --output json --no-prompt \
+            --cwd "$directory" --environment "$ENVIRONMENT_NAME")
+          if ! jq -e --arg name "$name" --arg version "$version" '
+            .toolbox == $name and .default_version == $version and
+            any(.versions[]; .version == $version and .is_default == true)
+          ' <<< "$versions" > /dev/null; then
+            echo "::error::Toolbox $name version $version is not the verified default."
+            exit 1
+          fi
+          jq -cn --arg name "$name" --arg version "$version" --arg endpoint "$endpoint" \
+            '{name:$name, version:$version, endpoint:$endpoint}' >> "$results"
+          printf '| %s | %s |\n' "$name" "$version" >> "$GITHUB_STEP_SUMMARY"
+        done < "$RELEASE_DIRECTORY/toolboxes.tsv"
+        printf 'toolboxes=%s\n' "$(jq -sc . "$results")" >> "$GITHUB_OUTPUT"
+
+    - name: Remove downloaded source and local azd environments
+      if: ${{ always() && steps.source.outputs.directory != '' }}
+      shell: bash
+      env:
+        DIRECTORY: ${{ steps.source.outputs.directory }}
+      run: |
+        set -euo pipefail
+        if [[ -L "$DIRECTORY" || "${DIRECTORY##*/}" != toolbox-deploy.* ||
+          "$(dirname -- "$DIRECTORY")" != "$(cd -- "$RUNNER_TEMP" && pwd -P)" ]]; then
+          echo "::error::Refusing cleanup outside the owned toolbox deployment directory."
+          exit 1
+        fi
+        rm -rf -- "$DIRECTORY"
