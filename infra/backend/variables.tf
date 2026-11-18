@@ -42,7 +42,7 @@ variable "cpu" {
 }
 variable "environment" {
   type        = string
-  description = "Release environment selected with an explicit root-local variable file and separate backend-<environment>.tfstate key."
+  description = "Release environment selected with an explicit root-local variable file and an isolated account using the ski-school-backend.tfstate key."
   default     = "dev"
   nullable    = false
   validation {
@@ -54,6 +54,7 @@ variable "gateway_base_url" {
   type        = string
   description = "Reviewed full HTTPS gateway model API base URL, including actual environment host/location and route, ending in /. No direct-model fallback."
   nullable    = false
+  sensitive   = true
 }
 variable "gateway_model_alias" {
   type        = string
@@ -87,6 +88,12 @@ variable "memory" {
 variable "project_endpoint" {
   type        = string
   description = "Reviewed existing Foundry HTTPS project data-plane endpoint, not an ARM ID; no project is created by this root."
+  nullable    = false
+}
+variable "existing_agent" {
+  type        = bool
+  description = "Require an existing Foundry agent and verify that version updates preserve its runtime identity."
+  default     = false
   nullable    = false
 }
 variable "rai_policy_id" {

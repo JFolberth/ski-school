@@ -1,9 +1,9 @@
 name: Build image artifact
-description: Build, validate, and upload a Docker-loadable image archive.
+description: Build, load, and upload a Docker-loadable image archive.
 
 inputs:
-  image-kind:
-    description: Image to build; must be frontend or bridge.
+  image-name:
+    description: Label used in the uploaded artifact name.
     required: true
   context:
     description: Repository-relative Docker build context.
@@ -19,7 +19,7 @@ inputs:
     default: ''
   artifact-prefix:
     description: Prefix used in the uploaded artifact name.
-    default: frontend-ci
+    default: ci
   retention-days:
     description: Number of days to retain the uploaded artifact.
     default: '7'
@@ -31,6 +31,9 @@ outputs:
   artifact-id:
     description: ID of the uploaded image artifact.
     value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-digest:
+    description: SHA-256 digest of the image archive artifact.
+    value: ${{ steps.upload.outputs.artifact-digest }}
 
 runs:
   using: composite
@@ -39,16 +42,11 @@ runs:
       id: prepare
       shell: bash
       env:
-        IMAGE_KIND: ${{ inputs.image-kind }}
         INPUT_CONTEXT: ${{ inputs.context }}
         INPUT_DOCKERFILE: ${{ inputs.dockerfile }}
         RUNNER_TEMP_PATH: ${{ runner.temp }}
       run: |
         set -euo pipefail
-        [[ "$IMAGE_KIND" == frontend || "$IMAGE_KIND" == bridge ]] || {
-          echo "::error::image-kind must be frontend or bridge."
-          exit 1
-        }
         workspace=$(realpath -e -- "$GITHUB_WORKSPACE")
         context=$(realpath -e -- "$workspace/$INPUT_CONTEXT")
         dockerfile=$(realpath -e -- "$workspace/$INPUT_DOCKERFILE")
@@ -60,19 +58,12 @@ runs:
         }
 
         runner_temp=$(realpath -e -- "$RUNNER_TEMP_PATH")
-        output_dir=$(mktemp -d "$runner_temp/frontend-image.XXXXXX")
+        output_dir=$(mktemp -d "$runner_temp/ci-image.XXXXXX")
         {
           printf 'context=%s\n' "$context"
           printf 'dockerfile=%s\n' "$dockerfile"
           printf 'output-directory=%s\n' "$output_dir"
         } >> "$GITHUB_OUTPUT"
-
-    - name: Check frontend JavaScript syntax
-      if: inputs.image-kind == 'frontend'
-      shell: bash
-      env:
-        CONTEXT: ${{ steps.prepare.outputs.context }}
-      run: node --check "$CONTEXT/app.js"
 
     - uses: docker/setup-buildx-action@v4
 
@@ -90,26 +81,19 @@ runs:
         tags: ${{ inputs.image-tag }}
         outputs: type=docker,dest=${{ steps.prepare.outputs.output-directory }}/image.tar
 
-    - name: Load and validate image
+    - name: Load image
       shell: bash
       env:
-        IMAGE_KIND: ${{ inputs.image-kind }}
-        IMAGE_TAG: ${{ inputs.image-tag }}
         OUTPUT_DIRECTORY: ${{ steps.prepare.outputs.output-directory }}
       run: |
         set -euo pipefail
         docker load --input "$OUTPUT_DIRECTORY/image.tar"
-        if [[ "$IMAGE_KIND" == frontend ]]; then
-          docker run --rm --network none --entrypoint nginx "$IMAGE_TAG" -t
-        else
-          docker run --rm --network none "$IMAGE_TAG" python -I -m pip check
-        fi
 
     - name: Upload image archive
       id: upload
       uses: ./.github/actions/upload-artifact
       with:
-        name: ${{ inputs.artifact-prefix }}-${{ inputs.image-kind }}-${{ github.run_id }}-${{ github.run_attempt }}
+        name: ${{ inputs.artifact-prefix }}-${{ inputs.image-name }}-${{ github.run_id }}-${{ github.run_attempt }}
         path: ${{ steps.prepare.outputs.output-directory }}/image.tar
         compression-level: 0
         retention-days: ${{ inputs.retention-days }}

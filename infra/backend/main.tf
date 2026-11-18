@@ -7,6 +7,7 @@ module "agent" {
   container_image_digest     = var.container_image_digest
   container_image_repository = var.container_image_repository
   cpu                        = var.cpu
+  existing_agent             = var.existing_agent
   gateway_base_url           = var.gateway_base_url
   gateway_model_alias        = var.gateway_model_alias
   idle_timeout_seconds       = var.idle_timeout_seconds

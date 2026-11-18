@@ -17,5 +17,11 @@ runs:
         directory=$(mktemp -d "$RUNNER_TEMP/terraform-validation.XXXXXX")
         trap 'rm -rf -- "$directory"' EXIT
         export TF_DATA_DIR="$directory"
-        terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color
-        terraform -chdir="$TF_ROOT" validate -no-color
+        if ! terraform -chdir="$TF_ROOT" init -backend=false -lockfile=readonly -no-color; then
+          printf '\n### Terraform offline initialization failed\n\nCheck provider installation and the committed lockfile. See the failed step for details.\n' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
+        if ! terraform -chdir="$TF_ROOT" validate -no-color; then
+          printf '\n### Terraform validation failed\n\nSee the failed step for configuration diagnostics.\n' >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi

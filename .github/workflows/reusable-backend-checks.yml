@@ -1,0 +1,92 @@
+name: Reusable backend checks
+
+on:
+  workflow_call:
+    outputs:
+      image-artifact-id:
+        description: Immutable archive ID of the tested backend image.
+        value: ${{ jobs.image.outputs.artifact-id }}
+      image-id:
+        description: Docker image ID of the tested backend image.
+        value: ${{ jobs.image.outputs.image-id }}
+      artifact-id:
+        description: Immutable Terraform source artifact ID.
+        value: ${{ jobs.checks.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 archive digest of the Terraform source artifact.
+        value: ${{ jobs.checks.outputs.artifact-digest }}
+      modules-artifact-id:
+        description: Immutable shared Terraform modules artifact ID.
+        value: ${{ jobs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest:
+        description: SHA-256 archive digest of the shared Terraform modules artifact.
+        value: ${{ jobs.checks.outputs.modules-artifact-digest }}
+      environments:
+        description: Validated Terraform environment manifest.
+        value: ${{ jobs.checks.outputs.environments }}
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    name: Build and verify backend image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      artifact-id: ${{ steps.build.outputs.artifact-id }}
+      image-id: ${{ steps.build.outputs.image-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - id: build
+        uses: ./.github/actions/build-image-artifact
+        with:
+          image-name: backend
+          context: src/backend
+          dockerfile: src/backend/Dockerfile
+          image-tag: ski-school-ci/backend:${{ github.sha }}
+          artifact-prefix: backend-ci
+          build-args: |
+            PIP_INDEX_URL=https://packagefeedproxy.microsoft.io/pypi/simple/
+            PIP_TRUSTED_HOST=packagefeedproxy.microsoft.io
+      - name: Check backend dependencies and startup
+        run: |
+          image="ski-school-ci/backend:$GITHUB_SHA"
+          docker run --rm --network none "$image" python -I -m pip check
+          docker run --rm --network none \
+            -e AI_GATEWAY_BASE_URL=https://example.invalid/models/openai/v1/ \
+            -e AI_GATEWAY_MODEL_ALIAS=ci-smoke \
+            "$image" python -I -c 'import runpy; runpy.run_path("main.py")["create_server"]()'
+
+  validate:
+    name: Validate backend Terraform offline
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.5
+          terraform_wrapper: false
+      - uses: ./.github/actions/terraform-validate
+        with:
+          terraform-root: infra/backend
+
+  checks:
+    name: Backend Azure Terraform plan
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/backend
+      state-key: ski-school-backend.tfstate
+      artifact-prefix: backend-ci
+      require-existing-state: true
+      foundry-agent-url: https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-foundry-dev-ncus"}]

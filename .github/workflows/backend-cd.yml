@@ -1,0 +1,119 @@
+name: Backend CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/backend/**
+      - infra/backend/**
+      - infra/modules/**
+      - .github/workflows/backend-ci.yml
+      - .github/workflows/backend-cd.yml
+      - .github/workflows/reusable-backend-checks.yml
+      - .github/workflows/reusable-terraform-*.yml
+      - .github/actions/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Backend checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-backend-checks.yml
+
+  publish:
+    name: Publish verified backend image to ACR
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      actions: read
+      id-token: write
+    env:
+      ACR_NAME: crskiregistrydevncus
+      IMAGE_REPOSITORY: ski-backend
+      SOURCE_IMAGE: ski-school-ci/backend:${{ github.sha }}
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - name: Require explicit release enablement
+        env:
+          BACKEND_RELEASE_ENABLED: ${{ vars.BACKEND_RELEASE_ENABLED }}
+          ARTIFACT_ID: ${{ needs.checks.outputs.image-artifact-id }}
+        run: |
+          if [[ "$BACKEND_RELEASE_ENABLED" != true ]]; then
+            echo "::error::Backend release is not enabled. Complete the documented dev setup before permitting ACR writes."
+            exit 1
+          fi
+          if [[ ! "$ARTIFACT_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::The image build must provide an artifact ID."
+            exit 1
+          fi
+      - name: Download the verified image artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.checks.outputs.image-artifact-id }}
+          path: ${{ runner.temp }}/release-image
+          digest-mismatch: error
+      - name: Load the tested image
+        env:
+          IMAGE_ID: ${{ needs.checks.outputs.image-id }}
+        run: |
+          docker load --input "$RUNNER_TEMP/release-image/image.tar"
+          if [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$SOURCE_IMAGE")" != "$IMAGE_ID linux/amd64" ]]; then
+            echo "::error::The artifact does not contain the tested linux/amd64 image."
+            exit 1
+          fi
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Push image and capture registry digest
+        id: push
+        env:
+          AZURE_CORE_OUTPUT: none
+        run: |
+          set -euo pipefail
+          az account show -o json | jq -e '
+            .id == "9a7e9255-7824-4c0d-a414-366f436f61dd" and
+            .tenantId == "5a4de383-e76f-4737-9623-e6281d36d202"
+          ' >/dev/null
+          release="$IMAGE_REPOSITORY:$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          az acr login --name "$ACR_NAME" --only-show-errors
+          docker tag "$SOURCE_IMAGE" "$ACR_NAME.azurecr.io/$release"
+          docker push "$ACR_NAME.azurecr.io/$release"
+          digest=$(az acr repository show --name "$ACR_NAME" --image "$release" \
+            --query digest --output tsv --only-show-errors)
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "$digest" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy backend hosted agent
+    needs: [checks, publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.checks.outputs.artifact-id }}
+      artifact-digest: ${{ needs.checks.outputs.artifact-digest }}
+      modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
+      environments: ${{ needs.checks.outputs.environments }}
+      terraform-root: infra/backend
+      artifact-prefix: backend-ci
+      state-key: ski-school-backend.tfstate
+      require-existing-state: true
+      image-digest: ${{ needs.publish.outputs.digest }}

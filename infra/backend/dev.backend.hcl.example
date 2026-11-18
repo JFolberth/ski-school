@@ -1,0 +1,4 @@
+resource_group_name  = "rg-terraformstate-dev-swece"
+storage_account_name = "saterraformstatedevswece"
+container_name       = "tfstate"
+key                  = "ski-school-backend.tfstate"

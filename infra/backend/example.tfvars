@@ -1,4 +1,4 @@
-# Copy to ignored root-local dev.tfvars; replace every placeholder.
+# Copy to an ignored root-local environment file for another environment.
 # Select explicitly: terraform plan -var-file=dev.tfvars (only after target/backend approval).
 # Registry/project prerequisites precede release; the agent gateway grant follows creation.
 acr_login_server           = "<existing-registry-login-server>"

@@ -43,7 +43,59 @@ assignment outside the Foundry resource group, on the dev registry
 `crskiregistrydevncus`. The OIDC identity needs registry read access and
 role-assignment management at that registry scope to manage that grant.
 
+Backend, Foundry, gateway, logging, and registry CD skip Terraform apply when
+the fresh, verified deployment plan has no changes. The job summary records
+the skip. Output-only changes still apply, and a failed plan or target check
+still fails deployment.
+
 ## Separate workload identities
+
+### Dev backend delivery
+
+`backend-ci.yml` builds and verifies the `linux/amd64` image for every
+matching PR. Same-repository human PRs also run a live Terraform plan: the plan
+uses the latest active Foundry version's ACR digest, not a PR image or a stale
+state output. Fork and bot PRs do not get Azure credentials. On pushes to
+`main`, `backend-cd.yml` repeats the same checks and verifies the tested image
+artifact from that run, publishes it to `ski-backend`,
+then freshly plans the verified Terraform source using the exact registry
+digest and applies it if there are changes. It checks readiness and invokes a
+session pinned to the version recorded in Terraform state, even when apply is
+skipped. No Azure Container App or routing rules are changed. Foundry can
+route dev traffic to the latest version before the smoke check finishes when
+the endpoint uses its default selector.
+
+Before enabling delivery:
+
+1. Migrate `backend-dev.tfstate` to `ski-school-backend.tfstate` in the dev
+   `saterraformstatedevswece/tfstate` container. Pause all old-key writers,
+   back up state securely, verify the same lineage and resource inventory at
+   the destination, and retire the old key from all clients without deleting
+   its blob. After migration approval, use a fresh Terraform data directory to
+   initialize `infra/backend` against the old key, then rerun `terraform init
+   -migrate-state` using `infra/backend/dev.backend.hcl.example` for the
+   destination settings. Verify the destination before merging. The workflow
+   refuses a missing destination.
+2. Plan and release use the existing `dev` GitHub Environment and its
+   `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` variables.
+   The public gateway URL is configured in `infra/backend/dev.tfvars`. Verify that the
+   shared OIDC identity can lease the state blob, read and manage the
+   Foundry agent, invoke it, push to ACR, and manage the role assignments
+   scoped to the gateway alias and App Insights component.
+3. Keep Azure access limited to trusted PRs. The shared OIDC identity has the
+   same Azure permissions in plan and release jobs, but the workflow only
+   runs publish and apply on pushes to `main`. Review the dev routing and
+   release impact before setting `BACKEND_RELEASE_ENABLED=true` in `dev`.
+
+The state move does not resolve existing Foundry drift. If state and Foundry
+report different versions, review the first refreshed plan and keep the
+previous image/version available for rollback. Dev plans read the existing
+agent identity before planning role assignments, and an update fails if Foundry
+returns a different identity. See
+[Foundry hosted-agent permissions](https://learn.microsoft.com/azure/foundry/agents/concepts/hosted-agent-permissions)
+and [hosted-agent routing](https://learn.microsoft.com/azure/foundry/agents/how-to/manage-hosted-agent).
+
+### Frontend workload identities
 
 Do not confuse roles held by the OIDC deployment identity with roles it assigns
 to the deployed application. `infra/modules/aca/main.tf` currently manages:

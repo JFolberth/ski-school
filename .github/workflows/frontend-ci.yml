@@ -19,7 +19,8 @@ permissions:
 
 concurrency:
   group: frontend-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # Let a running Terraform plan release its remote state lock.
+  cancel-in-progress: false
 
 # Path-filtered workflows must not be unconditional required checks for all PRs.
 jobs:

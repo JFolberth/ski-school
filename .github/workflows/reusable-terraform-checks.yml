@@ -23,6 +23,10 @@ on:
         description: Refuse plans against a missing state blob.
         type: boolean
         default: false
+      foundry-agent-url:
+        description: Optional Foundry agent URL for the active image digest used in the plan.
+        type: string
+        default: ''
     outputs:
       artifact-id:
         description: Immutable root source artifact from successful checks in this run.
@@ -61,6 +65,8 @@ jobs:
       artifact-prefix: ${{ inputs.artifact-prefix }}
       require-session-signing-key: false
       require-existing-state: ${{ inputs.require-existing-state }}
+      require-expected-resource-group: true
+      foundry-agent-url: ${{ inputs.foundry-agent-url }}
       publish-source: false
       environments: ${{ inputs.environments }}
 
