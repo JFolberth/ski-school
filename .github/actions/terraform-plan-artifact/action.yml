@@ -31,6 +31,9 @@ inputs:
   image-digest:
     description: Published container image digest for apply when the Terraform root requires one.
     default: ""
+  foundry-agent-url:
+    description: Optional Foundry agent URL to resolve the active image digest for a plan.
+    default: ""
 outputs:
   backend-release:
     description: Non-secret backend version, image and target metadata after apply.
@@ -52,6 +55,7 @@ runs:
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
         IMAGE_DIGEST: ${{ inputs.image-digest }}
+        FOUNDRY_AGENT_URL: ${{ inputs.foundry-agent-url }}
       run: |
         set -euo pipefail
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
@@ -111,33 +115,36 @@ runs:
           echo "::error::Remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
           exit 1
         fi
-        if [[ "$TF_ROOT" == infra/backend ]]; then
-          if [[ "$APPLY" == true ]]; then
-            export TF_VAR_container_image_digest="$IMAGE_DIGEST"
-          else
-            if ! state_image=$(terraform -chdir="$TF_ROOT" output -raw image_uri 2>"$DIRECTORY/output.log") ||
-              [[ ! "$state_image" =~ ^crskiregistrydevncus\.azurecr\.io/ski-backend@sha256:[0-9a-f]{64}$ ]]; then
-              echo "::error::Backend state must contain the reviewed dev agent image output."
-              exit 1
-            fi
-            # State can lag Foundry after an out-of-band version publication.
-            agent_url=https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev
-            if ! version=$(az rest --method get --url "$agent_url?api-version=v1" --resource https://ai.azure.com \
-              --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
-              jq -er '.versions.latest.version | strings | select(test("^[1-9][0-9]*$"))') ||
-              ! baseline=$(az rest --method get --url "$agent_url/versions/$version?api-version=v1" --resource https://ai.azure.com \
-              --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
-              jq -er --arg version "$version" 'select(.status == "active" and .version == $version) | .definition.container_configuration.image | strings') ||
-              [[ ! "$baseline" =~ ^crskiregistrydevncus\.azurecr\.io/ski-backend@sha256:[0-9a-f]{64}$ ]]; then
-              echo "::error::The latest Foundry version must be active and use a published dev backend digest."
-              exit 1
-            fi
-            export TF_VAR_container_image_digest="${baseline##*@}"
-          fi
-          if [[ ! "$TF_VAR_container_image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::Expected a published backend image digest."
+        if [[ -n "$FOUNDRY_AGENT_URL" ]]; then
+          if [[ "$APPLY" == true || -n "$IMAGE_DIGEST" ||
+            ! "$FOUNDRY_AGENT_URL" =~ ^https://[a-zA-Z0-9-]+\.services\.ai\.azure\.com/api/projects/[a-zA-Z0-9_-]+/agents/[a-zA-Z0-9_-]+$ ]]; then
+            echo "::error::Foundry image lookup requires a valid agent URL and a plan without an explicit image digest."
             exit 1
           fi
+          if ! state_image=$(terraform -chdir="$TF_ROOT" output -raw image_uri 2>"$DIRECTORY/output.log") ||
+            [[ ! "$state_image" =~ ^[a-z0-9.-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::State must contain the existing agent image URI."
+            exit 1
+          fi
+          # State can lag Foundry after an out-of-band version publication.
+          if ! version=$(az rest --method get --url "$FOUNDRY_AGENT_URL?api-version=v1" --resource https://ai.azure.com \
+            --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
+            jq -er '.versions.latest.version | strings | select(test("^[1-9][0-9]*$"))') ||
+            ! baseline=$(az rest --method get --url "$FOUNDRY_AGENT_URL/versions/$version?api-version=v1" --resource https://ai.azure.com \
+            --output json --only-show-errors 2>"$DIRECTORY/foundry.log" |
+            jq -er --arg version "$version" 'select(.status == "active" and .version == $version) | .definition.container_configuration.image | strings') ||
+            [[ "${baseline%@*}" != "${state_image%@*}" ]]; then
+            echo "::error::The latest Foundry version must be active and use the same image repository as state."
+            exit 1
+          fi
+          IMAGE_DIGEST="${baseline##*@}"
+        fi
+        if [[ -n "$IMAGE_DIGEST" || -n "$FOUNDRY_AGENT_URL" ]]; then
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Expected a published container image digest."
+            exit 1
+          fi
+          export TF_VAR_container_image_digest="$IMAGE_DIGEST"
         fi
         if ! terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
           -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" > "$DIRECTORY/plan.log" 2>&1; then
@@ -183,8 +190,10 @@ runs:
             env.TARGET_ENVIRONMENT == "dev" and env.EXPECTED_RESOURCE_GROUP == "rg-ski-foundry-dev-ncus" and
             .variables.project_endpoint.value == ("https://" + $project) and
             .variables.agent_name.value == "ski-backend-dev" and
+            (env.APPLY == "true" or env.FOUNDRY_AGENT_URL == ("https://" + $project + "/agents/ski-backend-dev")) and
             .variables.acr_login_server.value == "crskiregistrydevncus.azurecr.io" and
             .variables.container_image_repository.value == "ski-backend" and
+            (env.TF_VAR_container_image_digest // "" | test("^sha256:[0-9a-f]{64}$")) and
             .variables.container_image_digest.value == env.TF_VAR_container_image_digest and
             all(.resource_changes[]? | select(.mode == "managed");
               (.change.actions | index("delete") | not) and

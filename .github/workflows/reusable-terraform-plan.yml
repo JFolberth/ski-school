@@ -31,6 +31,10 @@ on:
         description: Refuse plans against a missing state blob.
         type: boolean
         default: false
+      foundry-agent-url:
+        description: Optional Foundry agent URL for the active image digest used in the plan.
+        type: string
+        default: ''
       publish-source:
         description: Upload root and module sources in each plan job; orchestration workflows may publish a verified bundle separately.
         type: boolean
@@ -154,6 +158,7 @@ jobs:
           state-key: ${{ inputs.state-key }}
           require-session-signing-key: ${{ inputs.require-session-signing-key }}
           require-existing-state: ${{ inputs.require-existing-state }}
+          foundry-agent-url: ${{ inputs.foundry-agent-url }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
         env:
           TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

@@ -81,6 +81,7 @@ jobs:
       state-key: ski-school-backend.tfstate
       artifact-prefix: backend-ci
       require-existing-state: true
+      foundry-agent-url: https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev
       environments: >-
         [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-foundry-dev-ncus"}]
 
