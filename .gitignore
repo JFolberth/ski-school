@@ -1,6 +1,9 @@
 # Local .terraform directories
 .terraform/
 
+# Local Azure Developer CLI environments
+.azure/
+
 # .tfstate files
 *.tfstate
 *.tfstate.*

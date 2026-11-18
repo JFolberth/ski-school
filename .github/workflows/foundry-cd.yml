@@ -6,6 +6,11 @@ on:
     paths:
       - infra/foundry/**
       - infra/modules/**
+      - .github/workflows/foundry-cd.yml
+      - .github/workflows/reusable-foundry-toolbox-source.yml
+      - .github/actions/foundry-toolbox-source-artifact/**
+      - .github/actions/foundry-toolbox-deploy/**
+      - .github/actions/upload-artifact/**
 
 permissions:
   contents: read
@@ -15,6 +20,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  toolbox-source:
+    name: Foundry toolbox source
+    needs: checks
+    uses: ./.github/workflows/reusable-foundry-toolbox-source.yml
+
   checks:
     name: Foundry checks
     permissions:
@@ -28,6 +38,51 @@ jobs:
       require-existing-state: true
       environments: >-
         [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-foundry-dev-ncus"}]
+
+  toolboxes:
+    name: Deploy Foundry toolboxes
+    needs: [checks, deploy, toolbox-source]
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: dev
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Require the approved infrastructure target
+        env:
+          ENVIRONMENTS: ${{ needs.checks.outputs.environments }}
+        run: |
+          set -euo pipefail
+          if ! jq -e '
+            type == "array" and length == 1 and
+            .[0].name == "dev" and
+            .[0].expected_resource_group == "rg-ski-foundry-dev-ncus"
+          ' <<< "$ENVIRONMENTS" > /dev/null; then
+            echo "::error::Toolbox deployment requires the approved Foundry infrastructure target."
+            exit 1
+          fi
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy and promote the toolbox artifact
+        uses: ./.github/actions/foundry-toolbox-deploy
+        with:
+          artifact-id: ${{ needs.toolbox-source.outputs.artifact-id }}
+          artifact-digest: ${{ needs.toolbox-source.outputs.artifact-digest }}
+          artifact-name: ${{ needs.toolbox-source.outputs.artifact-name }}
+          publishing-attempt: ${{ needs.toolbox-source.outputs.publishing-attempt }}
+          environment: dev
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          project-id: /subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-foundry-dev-ncus/providers/Microsoft.CognitiveServices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus
 
   deploy:
     name: Foundry Terraform CD

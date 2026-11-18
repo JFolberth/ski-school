@@ -1,0 +1,51 @@
+name: Reusable Foundry toolbox source
+
+on:
+  workflow_call:
+    inputs:
+      toolbox-root:
+        description: Repository-relative parent of toolbox folders.
+        type: string
+        default: infra/foundry/toolboxes
+      artifact-prefix:
+        description: Environment-neutral toolbox artifact prefix.
+        type: string
+        default: foundry-toolboxes
+    outputs:
+      artifact-id:
+        description: Immutable toolbox source artifact ID.
+        value: ${{ jobs.source.outputs.artifact-id }}
+      artifact-digest:
+        description: SHA-256 digest of the toolbox source archive.
+        value: ${{ jobs.source.outputs.artifact-digest }}
+      artifact-name:
+        description: Exact name supplied by the publishing job.
+        value: ${{ jobs.source.outputs.artifact-name }}
+      publishing-attempt:
+        description: Original publishing attempt, including on deployment reruns.
+        value: ${{ jobs.source.outputs.publishing-attempt }}
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: Publish toolbox source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact-id: ${{ steps.source.outputs.artifact-id }}
+      artifact-digest: ${{ steps.source.outputs.artifact-digest }}
+      artifact-name: ${{ steps.source.outputs.artifact-name }}
+      publishing-attempt: ${{ steps.source.outputs.publishing-attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Package toolbox folders for this revision
+        id: source
+        uses: ./.github/actions/foundry-toolbox-source-artifact
+        with:
+          toolbox-root: ${{ inputs.toolbox-root }}
+          name: ${{ inputs.artifact-prefix }}-${{ github.run_id }}-${{ github.run_attempt }}
