@@ -47,6 +47,18 @@ If yes, list the module(s) and the roots that consume them:
 
 <!-- These are PR checks only; deployment workflows are not triggered by this template or by a pull request. -->
 
+## Expected post-merge CD
+
+**CD workflows triggered by a merge to `main`** (check each workflow whose paths this PR changes; one merge can trigger multiple workflows):
+
+- [ ] `frontend-cd.yml` — `src/frontend/**`, `infra/frontend/**`, `infra/modules/**`, `.github/workflows/frontend-ci.yml`, `.github/workflows/frontend-cd.yml`, `.github/workflows/reusable-frontend-*.yml`, `.github/workflows/reusable-terraform-*.yml`, or `.github/actions/**`.
+- [ ] `backend-cd.yml` — `src/backend/**`, `infra/backend/**`, `infra/modules/**`, `.github/workflows/backend-ci.yml`, `.github/workflows/backend-cd.yml`, `.github/workflows/reusable-backend-checks.yml`, `.github/workflows/reusable-terraform-*.yml`, or `.github/actions/**`.
+- [ ] `gateway-cd.yml` — `infra/gateway/**` or `infra/modules/**`.
+- [ ] `foundry-cd.yml` — `infra/foundry/**` or `infra/modules/**`.
+- [ ] `logging-cd.yml` — `infra/logging/**` or `infra/modules/**`.
+- [ ] `registry-cd.yml` — `infra/registry/**` or `infra/modules/**`.
+- [ ] None of the above; explain why: <!-- e.g. no changed paths match a CD workflow -->
+
 ## Risk and rollout
 
 - **Operational impact or rollout notes:** <!-- N/A if none -->
