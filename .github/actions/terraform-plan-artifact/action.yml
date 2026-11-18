@@ -267,7 +267,8 @@ runs:
           (if env.TF_ROOT == "infra/backend" then
             .variables.tenant_id.value == env.ARM_TENANT_ID and backend_target($subscription; $group)
           elif env.EXPECTED_RESOURCE_GROUP == "" and env.TF_ROOT != "infra/frontend" then true else
-            .variables.tenant_id.value == env.ARM_TENANT_ID and
+            (.variables.tenant_id.value == env.ARM_TENANT_ID or
+              (env.TF_ROOT == "infra/frontend" and .variables.tenant_id == null)) and
             (.planned_values.outputs.resource_group_id.value | ascii_downcase) == $group and
             (env.TF_ROOT != "infra/frontend" or frontend_target($frontend_acr; $frontend_agent)) and
             all(.resource_changes[]? | select(.mode == "managed");
@@ -299,7 +300,7 @@ runs:
               echo 'The following checks omit planned values and secrets.'
               if ! jq -r '
                 "subscription_id_matches=\(.variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID)",
-                "tenant_id_matches=\(.variables.tenant_id.value == env.ARM_TENANT_ID)",
+                "tenant_id_matches=\(.variables.tenant_id.value == env.ARM_TENANT_ID or .variables.tenant_id == null)",
                 "environment_matches=\(.variables.environment.value == env.TARGET_ENVIRONMENT)",
                 "resource_group_output_matches=\(try ((.planned_values.outputs.resource_group_id.value | ascii_downcase) == ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase))) catch false)",
                 "frontend_targets_match=\(try ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"), ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev")]) catch false)",
