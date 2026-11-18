@@ -1,0 +1,10 @@
+# Non-secret dev configuration; select explicitly with -var-file=dev.tfvars.
+base_name                 = "ski-registry"
+diagnostic_log_categories = ["ContainerRegistryLoginEvents", "ContainerRegistryRepositoryEvents"]
+environment               = "dev"
+location                  = "northcentralus"
+registry_sku_name         = "Basic"
+subscription_id           = "9a7e9255-7824-4c0d-a414-366f436f61dd"
+tags                      = {}
+tenant_id                 = "5a4de383-e76f-4737-9623-e6281d36d202"
+workspace_id              = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-logs-dev-ncus/providers/Microsoft.OperationalInsights/workspaces/log-ski-logs-dev-eus2"

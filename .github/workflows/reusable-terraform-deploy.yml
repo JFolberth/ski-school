@@ -33,6 +33,10 @@ on:
       state-key:
         type: string
         required: true
+      require-existing-state:
+        description: Refuse deployment plans against a missing state blob.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -198,5 +202,6 @@ jobs:
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
           require-session-signing-key: "false"
+          require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"

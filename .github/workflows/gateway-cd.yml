@@ -20,7 +20,13 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: ./.github/workflows/reusable-gateway-checks.yml
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/gateway
+      state-key: ski-school-gateway.tfstate
+      artifact-prefix: gateway-ci
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-gateway-dev-eus2"}]
 
   deploy:
     name: Gateway Terraform CD
@@ -37,4 +43,6 @@ jobs:
       modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
       modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
       environments: ${{ needs.checks.outputs.environments }}
+      terraform-root: infra/gateway
+      artifact-prefix: gateway-ci
       state-key: ski-school-gateway.tfstate
