@@ -28,8 +28,8 @@ inputs:
   apply:
     description: Apply the guarded saved plan; allowed only on a main push.
     default: "false"
-  backend-image-digest:
-    description: Published backend image digest for apply; plan-only runs use the active Foundry baseline.
+  image-digest:
+    description: Published container image digest for apply when the Terraform root requires one.
     default: ""
 outputs:
   backend-release:
@@ -51,7 +51,7 @@ runs:
         REQUIRE_EXISTING_STATE: ${{ inputs.require-existing-state }}
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
-        BACKEND_IMAGE_DIGEST: ${{ inputs.backend-image-digest }}
+        IMAGE_DIGEST: ${{ inputs.image-digest }}
       run: |
         set -euo pipefail
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
@@ -113,7 +113,7 @@ runs:
         fi
         if [[ "$TF_ROOT" == infra/backend ]]; then
           if [[ "$APPLY" == true ]]; then
-            export TF_VAR_container_image_digest="$BACKEND_IMAGE_DIGEST"
+            export TF_VAR_container_image_digest="$IMAGE_DIGEST"
           else
             if ! state_image=$(terraform -chdir="$TF_ROOT" output -raw image_uri 2>"$DIRECTORY/output.log") ||
               [[ ! "$state_image" =~ ^crskiregistrydevncus\.azurecr\.io/ski-backend@sha256:[0-9a-f]{64}$ ]]; then

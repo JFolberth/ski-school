@@ -37,8 +37,8 @@ on:
         description: Refuse deployment plans against a missing state blob.
         type: boolean
         default: false
-      backend-image-digest:
-        description: Immutable ACR digest from the backend image publication job.
+      image-digest:
+        description: Immutable container image digest from the publication job, when required by the Terraform root.
         type: string
         default: ''
 
@@ -210,7 +210,7 @@ jobs:
           require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"
-          backend-image-digest: ${{ inputs.backend-image-digest }}
+          image-digest: ${{ inputs.image-digest }}
       - uses: actions/checkout@v7
         if: inputs.terraform-root == 'infra/backend'
         with:

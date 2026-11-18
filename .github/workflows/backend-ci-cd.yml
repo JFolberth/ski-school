@@ -175,4 +175,4 @@ jobs:
       artifact-prefix: backend-ci
       state-key: ski-school-backend.tfstate
       require-existing-state: true
-      backend-image-digest: ${{ needs.publish.outputs.digest }}
+      image-digest: ${{ needs.publish.outputs.digest }}
