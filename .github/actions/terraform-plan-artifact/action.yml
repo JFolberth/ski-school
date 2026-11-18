@@ -172,8 +172,18 @@ runs:
           echo "::error::A bridge image digest is only valid for frontend apply."
           exit 1
         fi
+        plan_args=("-var-file=$TARGET_ENVIRONMENT.tfvars")
+        if [[ -n "$IMAGE_DIGEST" ]]; then
+          plan_args+=("-var=container_image_digest=$IMAGE_DIGEST")
+        fi
+        if [[ -n "$BRIDGE_IMAGE_DIGEST" ]]; then
+          plan_args+=("-var=bridge_image_digest=$BRIDGE_IMAGE_DIGEST")
+        fi
+        if [[ "$TF_ROOT" == "infra/frontend" && "$APPLY" == true ]]; then
+          plan_args+=("-var=deployment_timestamp=$TF_VAR_deployment_timestamp")
+        fi
         plan_status=0
-        terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
+        terraform -chdir="$TF_ROOT" plan "${plan_args[@]}" \
           -detailed-exitcode -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.log" 2>&1 || plan_status=$?
         [[ "$plan_status" == 0 || "$plan_status" == 2 ]] ||
