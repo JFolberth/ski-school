@@ -1,0 +1,172 @@
+name: Frontend CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/frontend/**
+      - infra/frontend/**
+      - infra/modules/**
+      - .github/workflows/frontend-ci.yml
+      - .github/workflows/frontend-cd.yml
+      - .github/workflows/reusable-frontend-*.yml
+      - .github/workflows/reusable-terraform-*.yml
+      - .github/actions/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Frontend checks
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-frontend-checks.yml
+    with:
+      require-existing-state: true
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
+
+  publish:
+    name: Publish verified frontend images to ACR
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: dev
+    permissions:
+      actions: read
+      id-token: write
+    env:
+      ACR_NAME: crskiregistrydevncus
+      SOURCE_FRONTEND: ski-school-ci/frontend:${{ github.sha }}
+      SOURCE_BRIDGE: ski-school-ci/bridge:${{ github.sha }}
+      FRONTEND_REPOSITORY: ski-school/frontend
+      BRIDGE_REPOSITORY: ski-school/bridge
+    outputs:
+      frontend-digest: ${{ steps.push.outputs.frontend-digest }}
+      bridge-digest: ${{ steps.push.outputs.bridge-digest }}
+    steps:
+      - name: Verify the image artifact metadata
+        env:
+          FRONTEND_ARTIFACT_ID: ${{ needs.checks.outputs.frontend-artifact-id }}
+          FRONTEND_ARTIFACT_DIGEST: ${{ needs.checks.outputs.frontend-artifact-digest }}
+          FRONTEND_IMAGE_ID: ${{ needs.checks.outputs.frontend-image-id }}
+          BRIDGE_ARTIFACT_ID: ${{ needs.checks.outputs.bridge-artifact-id }}
+          BRIDGE_ARTIFACT_DIGEST: ${{ needs.checks.outputs.bridge-artifact-digest }}
+          BRIDGE_IMAGE_ID: ${{ needs.checks.outputs.bridge-image-id }}
+        run: |
+          set -euo pipefail
+          for artifact_id in "$FRONTEND_ARTIFACT_ID" "$BRIDGE_ARTIFACT_ID"; do
+            if [[ ! "$artifact_id" =~ ^[0-9]+$ ]]; then
+              echo "::error::The image build must provide numeric artifact IDs."
+              exit 1
+            fi
+          done
+          for digest in "$FRONTEND_ARTIFACT_DIGEST" "$BRIDGE_ARTIFACT_DIGEST"; do
+            if [[ ! "$digest" =~ ^[0-9a-f]{64}$ ]]; then
+              echo "::error::The image build must provide SHA-256 artifact digests."
+              exit 1
+            fi
+          done
+          for image_id in "$FRONTEND_IMAGE_ID" "$BRIDGE_IMAGE_ID"; do
+            if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::The image build must provide Docker image IDs."
+              exit 1
+            fi
+          done
+
+      - name: Download the verified frontend image artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.checks.outputs.frontend-artifact-id }}
+          path: ${{ runner.temp }}/frontend-release/frontend
+          digest-mismatch: error
+
+      - name: Download the verified bridge image artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.checks.outputs.bridge-artifact-id }}
+          path: ${{ runner.temp }}/frontend-release/bridge
+          digest-mismatch: error
+
+      - name: Load and verify the tested images
+        env:
+          FRONTEND_IMAGE_ID: ${{ needs.checks.outputs.frontend-image-id }}
+          BRIDGE_IMAGE_ID: ${{ needs.checks.outputs.bridge-image-id }}
+        run: |
+          set -euo pipefail
+          docker load --input "$RUNNER_TEMP/frontend-release/frontend/image.tar"
+          docker load --input "$RUNNER_TEMP/frontend-release/bridge/image.tar"
+          if [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$SOURCE_FRONTEND")" != "$FRONTEND_IMAGE_ID linux/amd64" ]]; then
+            echo "::error::The frontend artifact does not contain the tested linux/amd64 image."
+            exit 1
+          fi
+          if [[ "$(docker image inspect --format '{{.Id}} {{.Os}}/{{.Architecture}}' "$SOURCE_BRIDGE")" != "$BRIDGE_IMAGE_ID linux/amd64" ]]; then
+            echo "::error::The bridge artifact does not contain the tested linux/amd64 image."
+            exit 1
+          fi
+
+      - uses: Azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push images and capture registry digests
+        id: push
+        env:
+          AZURE_CORE_OUTPUT: none
+        run: |
+          set -euo pipefail
+          az account show -o json | jq -e '
+            .id == "9a7e9255-7824-4c0d-a414-366f436f61dd" and
+            .tenantId == "5a4de383-e76f-4737-9623-e6281d36d202"
+          ' >/dev/null
+          az acr login --name "$ACR_NAME" --only-show-errors
+          for kind in frontend bridge; do
+            if [[ "$kind" == frontend ]]; then
+              source_image="$SOURCE_FRONTEND"
+              repository="$FRONTEND_REPOSITORY"
+            else
+              source_image="$SOURCE_BRIDGE"
+              repository="$BRIDGE_REPOSITORY"
+            fi
+            release="$repository:$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            docker tag "$source_image" "$ACR_NAME.azurecr.io/$release"
+            docker push "$ACR_NAME.azurecr.io/$release"
+            digest=$(az acr repository show --name "$ACR_NAME" --image "$release" \
+              --query digest --output tsv --only-show-errors)
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+            printf '%s-digest=%s\n' "$kind" "$digest" >> "$GITHUB_OUTPUT"
+          done
+
+  deploy:
+    name: Deploy frontend
+    needs: [checks, publish]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.checks.outputs.artifact-id }}
+      artifact-digest: ${{ needs.checks.outputs.artifact-digest }}
+      modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
+      environments: ${{ needs.checks.outputs.environments }}
+      terraform-root: infra/frontend
+      artifact-prefix: frontend-ci
+      state-key: ski-school-frontend.tfstate
+      require-existing-state: true
+      image-digest: ${{ needs.publish.outputs.frontend-digest }}
+      bridge-image-digest: ${{ needs.publish.outputs.bridge-digest }}
+    secrets:
+      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
