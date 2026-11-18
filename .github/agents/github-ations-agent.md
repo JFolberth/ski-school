@@ -87,9 +87,10 @@ action-version table exists in shared instructions or introduce unused tooling.
 1. Run `actionlint .github/workflows/*.yml` on actual workflow files.
 2. Discover actual `.github/actions/**/action.yml` and `action.yaml` files. Validate their composite metadata using the official schema and available tooling; actionlint alone does not validate standalone composite metadata.
 3. Check all changed YAML for duplicate keys and parse every inline Bash block. Use available parsers and dynamically discovered files, not a copied list of nonexistent deployment workflows. Keep YAML literal blocks correctly indented; prefer `jq` for JSON.
-4. Verify checkout order, local `uses` paths, action inputs/outputs, `needs` gates, permission ceilings, artifact names, exclusions, and cleanup paths across the complete chain.
-5. Run relevant existing Terraform, JavaScript, and container checks. Verify the fresh bridge build with the approved feed when build behavior changes. Do not add test files or install new validation dependencies without a missing-tool failure or explicit need.
-6. Report changed files, reusable boundaries, behavior preserved or intentionally changed, checks actually run, and remaining setup/approval requirements. Distinguish local/static evidence from a hosted authenticated plan or deployment.
+4. For every changed reusable workflow or composite action, trace all direct and transitive local `uses:` callers across the repository, not just the workload that prompted the change. Verify each caller's inputs, defaults, outputs, secret and permission forwarding, `needs` gates, checkout order, and artifact handoffs across the complete chain.
+5. Run the existing checks for each affected caller and verify hosted results for the changed revision where available. Check event and path filters: a skipped or untriggered job is not a pass. If a hosted check cannot run safely, validate its contract locally and report what remains unverified. Never broaden triggers, grant credentials, or run a deployment just to validate a change.
+6. Run relevant existing Terraform, JavaScript, and container checks. Verify the fresh bridge build with the approved feed when build behavior changes. Do not add test files or install new validation dependencies without a missing-tool failure or explicit need.
+7. Report changed files, affected callers, behavior preserved or intentionally changed, checks actually run, and remaining setup/approval requirements. Distinguish local/static evidence from a hosted authenticated plan or deployment.
 
 Official references:
 - https://docs.github.com/en/actions/tutorials/create-actions/create-a-composite-action
