@@ -60,10 +60,22 @@ runs:
         set -euo pipefail
 
         fail() {
-          local message=$1 log=${2:-}
-          # Publish only a known-safe Terraform title, not the contents of the diagnostic log.
+          local message=$1 log=${2:-} title
+          # Publish only exact, known-safe titles; provider diagnostic bodies can contain secrets.
           if [[ -n "$log" ]] && grep -Fqx 'Error: Error acquiring the state lock' "$log"; then
             message="$message Error acquiring the state lock. Check for an active Terraform run or contact the state owner if the lock persists."
+          fi
+          if [[ -n "$log" ]]; then
+            for title in \
+              'Failed to create/update resource' \
+              'Failed to retrieve resource' \
+              'Failed to build output' \
+              'Resource postcondition failed' \
+              'Provider produced inconsistent result after apply'; do
+              if grep -Fqx "Error: $title" "$log"; then
+                message="$message $title."
+              fi
+            done
           fi
           printf '::error::%s\n' "$message"
           printf '\n### Terraform check failed\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
