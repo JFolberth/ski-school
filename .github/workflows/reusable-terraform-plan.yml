@@ -104,7 +104,7 @@ jobs:
     concurrency:
       group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
       cancel-in-progress: false
-    environment: ${{ inputs.terraform-root == 'infra/backend' && format('backend-plan-{0}', matrix.environment.name) || matrix.environment.name }}
+    environment: ${{ matrix.environment.name }}
     permissions:
       contents: read
       id-token: write

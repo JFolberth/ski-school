@@ -69,20 +69,16 @@ Before enabling delivery:
    -migrate-state` using `infra/backend/dev.backend.hcl.example` for the
    destination settings. Verify the destination before merging. The workflow
    refuses a missing destination.
-2. Set up `backend-plan-dev` with a separate OIDC identity and restrict who
-   can approve PRs for Azure access. Configure `AZURE_CLIENT_ID`,
-   `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` for its environment-scoped
-   federated credential, and provide `BACKEND_GATEWAY_BASE_URL` as an
-   environment secret. Grant scoped state access (including the blob lease)
-   and read access to Foundry agents and the referenced role assignments;
-   do not grant ACR push or agent deployment permissions.
-3. Configure `backend-release-dev` for `main` only, with the same variable
-   names and gateway secret but a separate release identity. Configure
-   environment protection for live releases. This identity also needs ACR
-   push, Foundry agent write/invocation, and scoped role-assignment management
-   for the gateway alias and App Insights component. Review the dev routing
-   and release impact before setting `BACKEND_RELEASE_ENABLED=true` in this
-   environment.
+2. Plan and release use the existing `dev` GitHub Environment and its
+   `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` variables.
+   Add `BACKEND_GATEWAY_BASE_URL` as a secret in `dev`. Verify that the
+   shared OIDC identity can lease the state blob, read and manage the
+   Foundry agent, invoke it, push to ACR, and manage the role assignments
+   scoped to the gateway alias and App Insights component.
+3. Keep Azure access limited to trusted PRs. The shared OIDC identity has the
+   same Azure permissions in plan and release jobs, but the workflow only
+   runs publish and apply on pushes to `main`. Review the dev routing and
+   release impact before setting `BACKEND_RELEASE_ENABLED=true` in `dev`.
 
 The state move does not resolve existing Foundry drift. If state and Foundry
 report different versions, review the first refreshed plan and keep the

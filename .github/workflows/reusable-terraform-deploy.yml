@@ -63,7 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         environment: ${{ fromJSON(inputs.environments) }}
-    environment: ${{ inputs.terraform-root == 'infra/backend' && format('backend-release-{0}', matrix.environment.name) || matrix.environment.name }}
+    environment: ${{ matrix.environment.name }}
     concurrency:
       group: terraform-${{ github.repository }}-${{ matrix.environment.state_storage_account }}-${{ matrix.environment.state_container }}-${{ inputs.state-key }}
       cancel-in-progress: false
