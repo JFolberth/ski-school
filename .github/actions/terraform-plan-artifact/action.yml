@@ -60,18 +60,14 @@ runs:
         set -euo pipefail
 
         fail() {
-          printf '::error::%s\n' "$1"
-          printf '\n### Terraform check failed\n\n%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"
-          exit 1
-        }
-
-        fail_plan_or_apply() {
-          local operation=$1 log=$2
-          # Match only the Terraform diagnostic title; never render the log or its lock details.
-          if grep -Fqx 'Error: Error acquiring the state lock' "$log"; then
-            fail "Terraform $operation could not acquire the state lock. Check for an active Terraform run or contact the state owner if the lock persists."
+          local message=$1 log=${2:-}
+          # Publish only a known-safe Terraform title, not the contents of the diagnostic log.
+          if [[ -n "$log" ]] && grep -Fqx 'Error: Error acquiring the state lock' "$log"; then
+            message="$message Error acquiring the state lock. Check for an active Terraform run or contact the state owner if the lock persists."
           fi
-          fail "Terraform $operation failed. Inspect the target securely before retrying; raw diagnostics are withheld."
+          printf '::error::%s\n' "$message"
+          printf '\n### Terraform check failed\n\n%s\n' "$message" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
         }
 
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
@@ -128,7 +124,7 @@ runs:
           -backend-config="storage_account_name=$STATE_ACCOUNT" \
           -backend-config="container_name=$STATE_CONTAINER" \
           -backend-config="key=$STATE_KEY" > "$DIRECTORY/init.log" 2>&1; then
-          fail "Terraform remote initialization failed. Check OIDC, backend inputs, and the committed lockfile."
+          fail "Terraform remote initialization failed. Check OIDC, backend inputs, and the committed lockfile." "$DIRECTORY/init.log"
         fi
         if [[ -n "$FOUNDRY_AGENT_URL" ]]; then
           if [[ "$APPLY" == true || -n "$IMAGE_DIGEST" ||
@@ -164,12 +160,8 @@ runs:
         terraform -chdir="$TF_ROOT" plan -var-file="$TARGET_ENVIRONMENT.tfvars" \
           -detailed-exitcode -lock-timeout=60s -no-color -out="$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.log" 2>&1 || plan_status=$?
-        case "$plan_status" in
-          0|2) ;;
-          *)
-            fail_plan_or_apply plan "$DIRECTORY/plan.log"
-            ;;
-        esac
+        [[ "$plan_status" == 0 || "$plan_status" == 2 ]] ||
+          fail "Terraform plan failed." "$DIRECTORY/plan.log"
         if ! terraform -chdir="$TF_ROOT" show -json "$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.json" 2> "$DIRECTORY/show.log"; then
           fail "Cannot read the private Terraform plan."
@@ -357,11 +349,11 @@ runs:
         if [[ "$APPLY" == true ]]; then
           if [[ "$plan_status" == 0 ]]; then
             echo "Terraform apply skipped: the verified plan has no changes." | tee -a "$GITHUB_STEP_SUMMARY"
-          elif terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=60s -no-color \
-            "$DIRECTORY/terraform.tfplan" > "$DIRECTORY/apply.log" 2>&1; then
-            echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
           else
-            fail_plan_or_apply apply "$DIRECTORY/apply.log"
+            terraform -chdir="$TF_ROOT" apply -input=false -lock-timeout=60s -no-color \
+              "$DIRECTORY/terraform.tfplan" > "$DIRECTORY/apply.log" 2>&1 ||
+              fail "Terraform apply failed." "$DIRECTORY/apply.log"
+            echo "Terraform apply completed using the verified artifact-source plan." >> "$GITHUB_STEP_SUMMARY"
           fi
           if [[ "$TF_ROOT" == infra/backend ]]; then
             if ! release=$(terraform -chdir="$TF_ROOT" output -json 2>"$DIRECTORY/output.log" | jq -ce '
