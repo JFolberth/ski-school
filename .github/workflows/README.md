@@ -9,10 +9,10 @@ confirmation of current Azure access or state.
 
 The CI/CD entry points are split by deployable root and source path. Pull
 requests run the matching path-filtered check workflow; pushes to `main` run
-the matching CD workflow after checks. The logging, registry, Foundry, and
-Gateway CI workflows share
+the matching CD workflow after checks. The logging, registry, Foundry, gateway
+and global CI workflows share
 [`reusable-terraform-checks.yml`](./reusable-terraform-checks.yml), which
-composes shared-module validation with the Terraform plan workflow. Their CD
+composes shared-module publication with root validation and planning. Their CD
 workflows pass the verified root and shared-module artifacts to
 [`reusable-terraform-deploy.yml`](./reusable-terraform-deploy.yml), which
 validates those artifacts and makes a fresh plan before applying.
@@ -81,10 +81,15 @@ assignment outside the Foundry resource group, on the dev registry
 `crskiregistrydevncus`. The OIDC identity needs registry read access and
 role-assignment management at that registry scope to manage that grant.
 
-Backend, Foundry, gateway, logging, and registry CD skip Terraform apply when
+Backend, Foundry, gateway, logging, registry, and global CD skip Terraform apply when
 the fresh, verified deployment plan has no changes. The job summary records
 the skip. Output-only changes still apply, and a failed plan or target check
 still fails deployment.
+
+Front Door CD has an additional caller-level opt-in and does not automatically
+deploy the frontend allowlist. Its filters, artifact chain, identity
+requirements, skip conditions and `ENABLE_GLOBAL_FRONT_DOOR_DEPLOYMENT` gate
+are documented in [Front Door delivery](../../docs/delivery.md#front-door-ci-and-opt-in-cd).
 
 ## Separate workload identities
 

@@ -6,8 +6,8 @@ on:
     paths:
       - infra/global/**
       - infra/modules/**
-      - .github/workflows/global-ci.yml
-      - .github/workflows/global-cd.yml
+      - .github/workflows/frontdoor-ci.yml
+      - .github/workflows/frontdoor-cd.yml
       - .github/workflows/reusable-terraform-*.yml
       - .github/actions/terraform-fmt/**
       - .github/actions/terraform-plan-artifact/**

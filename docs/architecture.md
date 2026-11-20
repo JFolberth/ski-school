@@ -2,7 +2,9 @@
 
 ## Application flow
 
-The browser loads the JavaScript website from nginx. nginx forwards `/api/`
+When deployed and selected by a client, Azure Front Door routes the browser to
+the frontend; the public Container App also remains directly reachable. The
+browser loads the JavaScript website from nginx. nginx forwards `/api/`
 requests to the Python bridge in the same Container App. The bridge invokes a
 Foundry hosted agent with its own managed identity. The Python agent uses
 Microsoft Agent Framework (MAF) and routes model requests and research-tool
@@ -29,20 +31,36 @@ recorded decision for every resource.
 
 | Deployment scope | Resource group and responsibility | Main handoffs |
 | --- | --- | --- |
-| [Logging](logging.md) | Shared observability workspaces, separated from consumers. | Workspace IDs to registry, Foundry, gateway and frontend. |
+| [Logging](logging.md) | Shared observability workspaces, separated from consumers. | Workspace IDs to registry, Foundry, gateway, frontend and global. |
 | [Registry](registry.md) | Image registry and diagnostics, separated from image consumers. | Registry ID, login server and published image digests. |
 | [Foundry](foundry.md) | Account, project, model deployments, project connections, telemetry and associated grants. | Account/model details to gateway; project and telemetry details to backend. |
 | [Gateway](gateway.md) | Gateway routing, aliases, tool endpoints and optional telemetry. | Alias, model endpoint and tool-server details to backend. |
 | [Backend](backend.md) | Hosted-agent definition and runtime grants, in the existing Foundry project. **No dedicated resource group** is created. | Agent and published version for frontend; state and release lifecycle remain separate. |
 | [Frontend](frontend.md) | Website, bridge and Container Apps runtime. | Uses the logging workspace, registry and an explicitly supplied Foundry agent ID. |
+| [Global Front Door](frontdoor.md) | A separate global-edge resource group per environment: profiles, endpoints, origin groups, origins, routes and diagnostics. | Reads the existing frontend ingress and sends diagnostics to the shared Log Analytics workspace; returns endpoint hostnames for the frontend allowlist. |
 
-These six Terraform roots have separate state, but are not independent of each
+These seven Terraform roots have separate state, but are not independent of each
 other. Inputs and outputs are supplied explicitly: there is no automatic
 cross-root orchestration. Modules under `infra/modules/` are reusable
 implementation units, not separate deployment scopes. A typical dependency
-order is logging, registry and Foundry, gateway, backend release, then frontend;
-check each root's prerequisites and grants before proceeding. Foundry and
-gateway identity handoffs can require staged changes.
+order is logging, registry and Foundry, gateway, backend release, frontend, then
+global. The generated Front Door hostname must also be reconciled with the
+frontend's allowlist after it is known. Check each root's prerequisites and
+grants before proceeding. Foundry and gateway identity handoffs can require
+staged changes.
+
+## Global Front Door
+
+[`infra/global`](../infra/global/) owns its resource group and the Front Door
+resources, not the frontend app or logging workspace. The separate state and
+resource group permit edge configuration to be managed independently of an
+application image release; that lifecycle rationale is an inference from the
+boundary, not a recorded design decision. Replacing or retiring an endpoint
+can interrupt edge traffic and invalidate the frontend allowlist. Retiring
+the edge does not itself retire the frontend, but clients using its hostname
+need another path. A frontend ingress or workspace change can break the edge
+even though their state is separate. See the [Front Door deployment scope](frontdoor.md)
+for routing, telemetry, state and delivery details.
 
 ## Environments, regions and state
 
@@ -55,11 +73,14 @@ See [delivery and state](delivery.md).
 
 Checked-in dev inputs place the logging resource group and the registry,
 Foundry, and frontend in North Central US; the logging workspaces and gateway
-are in East US 2. Different resource locations do not constitute regional
-replicas. Independent regional scaling is a design goal, not an implemented
+are in East US 2; the global edge has no regional frontend replica. Different
+resource locations do not constitute regional replicas. Independent regional
+scaling is a design goal, not an implemented
 multi-region or disaster-recovery strategy. Extra regional instances require
-explicit targets, state and cross-root handoffs, verified regional support and
-quotas, and a separately designed traffic and data strategy.
+explicit regional frontend and dependent service targets, state and cross-root
+handoffs, verified regional support and quotas, additional origin configuration,
+and a separately designed traffic, data replication and failover strategy.
+Adding a hostname alone does not provision a replica or establish its readiness.
 
 References: [Azure resource groups](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal),
 [Terraform backends](https://developer.hashicorp.com/terraform/language/state/backends),
