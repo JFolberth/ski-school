@@ -60,8 +60,11 @@ models = {}
 mcp_endpoints = {}
 # mcp_endpoints = {
 #   my-tools = {
-#     backend_url    = "https://tools.example.invalid/mcp?api-version=v1"
-#     token_audience = "api://my-tools"
+#     allowed_tools      = ["lookup"] # Optional; unlisted tools cannot be discovered or called.
+#     backend_url        = "https://tools.example.invalid/mcp?api-version=v1"
+#     blocked_tools      = ["create_booking"] # Optional; reject calls even if the tool is allowlisted.
+#     supported_versions = ["2025-06-18"] # Optional; choose versions supported by the backend.
+#     token_audience     = "api://my-tools"
 #   }
 # }
 monitor_workspace_id = null

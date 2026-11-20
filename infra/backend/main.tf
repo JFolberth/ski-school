@@ -9,12 +9,27 @@ module "agent" {
   cpu                        = var.cpu
   existing_agent             = var.existing_agent
   gateway_base_url           = var.gateway_base_url
-  gateway_model_alias        = var.gateway_model_alias
-  idle_timeout_seconds       = var.idle_timeout_seconds
-  memory                     = var.memory
-  project_endpoint           = var.project_endpoint
-  rai_policy_id              = var.rai_policy_id
+  gateway_mcp_servers = {
+    for name, server in var.gateway_mcp_servers : name => {
+      url = server.url
+    }
+  }
+  gateway_model_alias  = var.gateway_model_alias
+  idle_timeout_seconds = var.idle_timeout_seconds
+  memory               = var.memory
+  project_endpoint     = var.project_endpoint
+  rai_policy_id        = var.rai_policy_id
 }
+
+module "agent_gateway_tool_caller" {
+  for_each     = var.gateway_mcp_servers
+  source       = "../modules/role-assignment"
+  principal_id = module.agent.agent_principal_id
+  # AI Gateway Tools User permits listing and calling tools on this server only.
+  role_definition_id = "/subscriptions/${var.subscription_id}/providers/Microsoft.Authorization/roleDefinitions/dce03f8d-857f-4e40-a90d-67770fa6ecd2"
+  scope_id           = each.value.tool_server_id
+}
+
 module "agent_gateway_caller" {
   source       = "../modules/role-assignment"
   principal_id = module.agent.agent_principal_id

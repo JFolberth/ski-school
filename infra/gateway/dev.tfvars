@@ -51,8 +51,11 @@ models = {
 }
 mcp_endpoints = {
   ski-tools = {
-    backend_url    = "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/toolboxes/ski-tools/versions/3/mcp?api-version=v1"
-    token_audience = "https://ai.azure.com"
+    allowed_tools      = ["snowsure___search_resorts", "snowsure___get_resort"]
+    backend_url        = "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/toolboxes/ski-tools/versions/6/mcp?api-version=v1"
+    blocked_tools      = ["snowsure___book_lodging"]
+    supported_versions = ["2025-06-18", "2025-11-25"]
+    token_audience     = "https://ai.azure.com"
   }
 }
 monitor_workspace_id = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-logs-dev-ncus/providers/Microsoft.Monitor/accounts/amw-ski-logs-dev-eus2"

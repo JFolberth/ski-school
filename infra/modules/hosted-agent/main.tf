@@ -34,6 +34,7 @@ resource "azapi_data_plane_resource" "this" {
       }]
       environment_variables = {
         AI_GATEWAY_BASE_URL                                = var.gateway_base_url
+        AI_GATEWAY_MCP_SERVERS                             = jsonencode(var.gateway_mcp_servers)
         AI_GATEWAY_MODEL_ALIAS                             = var.gateway_model_alias
         ENABLE_SENSITIVE_DATA                              = "false"
         OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = "false"
