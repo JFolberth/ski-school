@@ -1,4 +1,36 @@
-# Workflow Azure access
+# GitHub Actions delivery and Azure access
+
+## Delivery architecture
+
+The CI/CD entry points are split by deployable root and source path. Pull
+requests run the matching path-filtered check workflow; pushes to `main` run
+the matching CD workflow after checks. The logging, registry, Foundry, and
+Gateway CI workflows share
+[`reusable-terraform-checks.yml`](./reusable-terraform-checks.yml), which
+composes shared-module validation with the Terraform plan workflow. Their CD
+workflows pass the verified root and shared-module artifacts to
+[`reusable-terraform-deploy.yml`](./reusable-terraform-deploy.yml), which
+validates those artifacts and makes a fresh plan before applying.
+
+Backend and Frontend have additional release stages because their Terraform
+roots consume image digests. Their CD workflows publish the images tested by
+CI and pass the resulting registry digests to the reusable deployment. Backend
+then checks and promotes the exact hosted-agent version; Frontend deploys the
+tested frontend and bridge images. Foundry CI/CD packages a toolbox source
+artifact separately; Foundry CD deploys that artifact only after Terraform
+succeeds. These workflows are configured for `dev`; the reusable Terraform jobs
+accept an environment matrix, but no additional environment target is currently
+configured here.
+
+The CI/CD workflows are path-filtered. A workflow with no matching changed
+paths may not run, so the presence of its file alone does not make it an
+appropriate unconditional required check for all pull requests. The checked-in
+workflow files do not establish which repository or organization branch rules
+are active.
+
+For resource ownership, root dependencies, regional limits, and the
+infrastructure lifecycle rationale, see the
+[infrastructure architecture overview](../../infra/README.md#architecture-and-deployment-boundaries).
 
 Track Azure access for the GitHub OIDC deployment identity here as requirements
 are confirmed. Assign Azure RBAC roles to the app registration's service principal
@@ -130,3 +162,7 @@ to either workload identity; their separate role assignments are still required.
 - [Contributor and User Access Administrator](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles/privileged)
 - [ACR roles and registry permission modes](https://learn.microsoft.com/en-us/azure/container-registry/container-registry-rbac-built-in-roles-overview)
 - [Foundry roles, scopes, and agent consumers](https://learn.microsoft.com/en-us/azure/foundry/concepts/rbac-foundry)
+- [Reusable workflows](https://docs.github.com/actions/how-tos/reuse-automations/reuse-workflows)
+- [GitHub Actions artifacts](https://docs.github.com/actions/using-workflows/storing-workflow-data-as-artifacts)
+- [GitHub Actions environments](https://docs.github.com/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+- [GitHub Actions OIDC with Azure](https://docs.github.com/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-azure)
