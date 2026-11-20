@@ -1,0 +1,58 @@
+name: Front Door CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - infra/global/**
+      - infra/modules/**
+      - .github/workflows/global-ci.yml
+      - .github/workflows/global-cd.yml
+      - .github/workflows/reusable-terraform-*.yml
+      - .github/actions/terraform-fmt/**
+      - .github/actions/terraform-plan-artifact/**
+      - .github/actions/terraform-source-artifact/**
+      - .github/actions/terraform-validate/**
+      - .github/actions/upload-artifact/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: global-cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: Front Door checks
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-checks.yml
+    with:
+      terraform-root: infra/global
+      state-key: ski-school-global.tfstate
+      artifact-prefix: global-ci
+      environments: >-
+        [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-global-dev-gbl"}]
+
+  deploy:
+    name: Front Door Terraform CD
+    needs: checks
+    if: >-
+      ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.checks.result == 'success' && vars.ENABLE_GLOBAL_FRONT_DOOR_DEPLOYMENT == 'true' }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    uses: ./.github/workflows/reusable-terraform-deploy.yml
+    with:
+      artifact-id: ${{ needs.checks.outputs.artifact-id }}
+      artifact-digest: ${{ needs.checks.outputs.artifact-digest }}
+      modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
+      modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
+      environments: ${{ needs.checks.outputs.environments }}
+      terraform-root: infra/global
+      artifact-prefix: global-ci
+      state-key: ski-school-global.tfstate

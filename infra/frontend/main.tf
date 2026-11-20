@@ -17,6 +17,7 @@ module "aca" {
   source = "../modules/aca"
 
   acr_resource_id                = var.acr_resource_id
+  bridge_allowed_origins         = var.bridge_allowed_origins
   bridge_cpu                     = var.bridge_cpu
   bridge_image_digest            = var.bridge_image_digest
   bridge_image_repository        = var.bridge_image_repository

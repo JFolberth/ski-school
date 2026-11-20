@@ -240,6 +240,10 @@ resource "azapi_resource" "container_app" {
             name  = "bridge"
             env = [
               {
+                name  = "BRIDGE_ALLOWED_ORIGINS"
+                value = jsonencode(var.bridge_allowed_origins)
+              },
+              {
                 name  = "BRIDGE_AUTH_MODE"
                 value = "managed_identity"
               },

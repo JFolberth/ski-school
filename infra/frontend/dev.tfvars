@@ -1,10 +1,11 @@
 # Non-secret development target values. Update image digests and deployment
 # timestamp together when publishing a new revision.
 acr_resource_id         = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-registry-dev-ncus/providers/Microsoft.ContainerRegistry/registries/crskiregistrydevncus"
-bridge_image_digest     = "sha256:613f1170f61a5668c790e29ab4ed7fa85048ec030d1c6c7aabc5d1ee75cf99dd"
+bridge_allowed_origins  = ["https://afd-ski-global-dev-fjhccsfqckbmenfe.b02.azurefd.net"]
+bridge_image_digest     = "sha256:0f74c0f6798523438a786e9b7b510390396586bd3fc8fd67434c41dc6f4802e7"
 bridge_image_repository = "ski-school/bridge"
-container_image_digest  = "sha256:c878e5f1d0d6ee5020b937c7afb9a8dcfb0e240f0f0c296c42ba57a9b435f934"
-deployment_timestamp    = "2026-11-17T05:01:31Z"
+container_image_digest  = "sha256:66d54c1ffb313788ab914a947b2dff021e744f971f274df601cc831045c7b605"
+deployment_timestamp    = "2026-11-20T17:41:07Z"
 diagnostic_disabled_categories = [
   "ContainerAppHTTPLogs",
   "AppEnvSpringAppConsoleLogs",
