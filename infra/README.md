@@ -1,4 +1,11 @@
-# Deployment architecture and initial dev deployment
+# Historical deployment and recovery notes
+
+For the current documentation index, see the [project README](../README.md).
+The [architecture](../docs/architecture.md), individual deployment-scope
+pages, and [delivery guide](../docs/delivery.md) describe the checked-in
+configuration. Initial deployment and recovery accounts below are historical
+observations, not proof of current resources, health, role assignments, state
+migration, or telemetry ingestion.
 
 ## Architecture and deployment boundaries
 
@@ -6,31 +13,73 @@ This repository separates infrastructure by resource-group ownership and change
 lifecycle, with an independent Terraform root and state for each deployment
 boundary. The separation allows a root to be planned and applied without
 replanning every resource in the website, but it does not remove dependencies
-between roots. The rationale below is inferred from the checked-in Terraform,
-outputs, environment inputs, and workflows; there is no architecture decision
-record establishing every choice.
+between roots. The rationale below combines the confirmed intent of independent deployment
+ownership, appropriately scoped access and eventual regional expansion with
+inferences from checked-in Terraform. There is no architecture decision record
+establishing every component-specific choice.
+
+The map uses resource groups as boundaries and shows their main components.
+Shared infrastructure is grouped separately from the application infrastructure.
+The map shows resource placement rather than communication; see the
+[application flow](../README.md#application-flow) and the cross-group Terraform
+inputs in the table below.
 
 ```mermaid
-flowchart LR
-  Logs["Logging root<br/>Log Analytics + Monitor workspace"]
-  Registry["Registry root<br/>Container Registry"]
-  Foundry["Foundry root<br/>account, project, models, telemetry"]
-  Gateway["Gateway root<br/>AI Gateway, providers, aliases, MCP"]
-  Backend["Backend root<br/>hosted-agent release"]
-  Frontend["Frontend root<br/>website runtime"]
+flowchart TB
+  subgraph Shared["Shared infrastructure"]
+    direction LR
+    subgraph LogRG["Logging resource group"]
+      direction TB
+      LogAnalytics["Log Analytics workspace"]
+      Monitor["Azure Monitor workspace"]
+    end
+    subgraph RegistryRG["Registry resource group"]
+      Registry["Container Registry"]
+    end
+  end
 
-  Logs -->|"workspace IDs"| Registry
-  Logs -->|"workspace IDs"| Foundry
-  Logs -->|"workspace IDs"| Gateway
-  Logs -->|"workspace ID"| Frontend
-  Registry -->|"registry ID / project image pull"| Foundry
-  Foundry -->|"account and model handoff"| Gateway
-  Foundry -->|"project endpoint"| Backend
-  Gateway -->|"model alias and tool access"| Backend
-  Registry -->|"immutable image digest"| Backend
-  Registry -->|"immutable image digests"| Frontend
-  Backend -->|"agent resource ID supplied to Frontend"| Frontend
+  subgraph Application["Application infrastructure"]
+    direction LR
+    subgraph FoundryRG["Foundry resource group"]
+      direction TB
+      Account["Foundry account"]
+      Project["Foundry project"]
+      Models["Model deployments"]
+      Insights["Application Insights"]
+      Agent["Hosted agent<br/>Backend root / separate state"]
+      Toolbox["Foundry Toolbox<br/>separate publication"]
+    end
+    subgraph GatewayRG["Gateway resource group"]
+      direction TB
+      Gateway["AI Gateway"]
+      Routing["Model provider, models + alias"]
+      Tools["Tool endpoints"]
+      GatewayInsights["Optional Application Insights + exporter"]
+    end
+    subgraph FrontendRG["Frontend resource group"]
+      direction TB
+      Environment["Container Apps environment"]
+      subgraph FrontendApp["Container App"]
+        direction LR
+        Website["Website / nginx"]
+        Bridge["Python bridge"]
+      end
+      FrontendInsights["Application Insights"]
+    end
+  end
 ```
+
+The logging, registry, Foundry, gateway and frontend resource groups each have
+their own Terraform root and state. Backend has separate state but manages its
+hosted agent in the Foundry project, not a separate resource group. Toolbox
+publication is separate from Terraform. Some roots also manage role assignments
+outside their resource group.
+
+Logging workspace IDs are supplied to Registry, Foundry, Gateway and Frontend.
+The registry supplies image-pull access and published image digests; Foundry
+supplies the project and model details; Gateway supplies the backend's model
+alias and tool endpoints. Frontend receives the agent ID as an explicit input,
+not a Backend Terraform output. The table below describes these handoffs.
 
 | Terraform root | Ownership and reason for the boundary | Cross-root contract and lifecycle consideration |
 | --- | --- | --- |
@@ -128,14 +177,17 @@ separate lifecycle from provisioning these roots.
 - Install Azure CLI and Terraform `>= 1.11, < 2.0`. Each root pins AzAPI in its
   checked-in lockfile. Sign in with `az login` (or `az login --use-device-code`
   on a remote host), select the intended subscription, and verify the tenant.
-- Each root needs an explicit, ignored `dev.tfvars` file passed with
-  `-var-file=dev.tfvars`. Start with that root's `example.tfvars`; supply the
-  tenant, subscription, and dependent resource IDs explicitly. Terraform does
-  not automatically load `.tfvar` files.
-- The backend settings are separate from variables. Copy the relevant
-  `dev.backend.hcl.example` to ignored `dev.backend.hcl`, verify the storage
-  coordinates and choose the matching isolated state key. Do not copy
-  credentials into either file or commit state, plans, or `.terraform/`.
+- Pass the root's explicit `dev.tfvars` with `-var-file=dev.tfvars`. The
+  checked-in `dev.tfvars` files contain non-secret configuration; other
+  environment inputs may need to be created from that root's example where
+  provided. Supply target and dependency values explicitly. Do not put
+  credentials in these files. Terraform does not automatically load `.tfvars`
+  files unless named for auto-loading.
+- The backend settings are separate from variables. Where a root provides
+  `dev.backend.hcl.example`, use it to prepare an ignored `dev.backend.hcl`;
+  the frontend root does not currently have an example. Verify the storage
+  coordinates and matching isolated state key. Do not copy credentials into
+  either file or commit state, plans, or `.terraform/`.
 - The existing dev backend was already provisioned before these deployments;
   its bootstrap configuration and state ownership are not established in this
   repository. Before a new bootstrap or migration, agree on how the backend
@@ -163,6 +215,10 @@ variable file. Review and approve the exact plan before applying it. Stop for
 unexpected changes, replacement, deletion, conflicts, or target differences.
 
 ## Initial dev sequence
+
+This sequence records the initial deployment, not current configuration or
+live status. Consult each linked [deployment scope](../README.md#documentation)
+and its current `.tfvars` before planning further work.
 
 1. **Logging (`logging`)**: The resource group is in North Central US. The
    explicit dev inputs place both Log Analytics and Azure Monitor workspaces
@@ -204,6 +260,9 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
 
 ## Initial identity and role boundaries
 
+These are historical observations; current Terraform may manage additional
+grants. Verify the applicable root and the actual target before acting.
+
 - Do not use keys as an authentication fallback or grant broad roles to bypass
   missing access. Separate the deployment operator, gateway, project, hosted
   agent, image-pull and telemetry identities. A system-assigned identity is the
@@ -235,9 +294,10 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
 
 ## Deployment notes and recovery
 
-- Azure CLI sign-in and the existing backend use identity-based access. The
-  root-local inputs and backend configuration are ignored and may contain
-  environment-specific information; recreate them securely on another host.
+- Azure CLI sign-in and the existing backend use identity-based access.
+  Backend configuration and secret inputs are not suitable for source control;
+  handle them securely. The checked-in `dev.tfvars` files are non-secret
+  environment configuration.
 - The first Foundry apply was **partial**: the resource group, account, model
   deployment and Audit diagnostic were created. Azure rejected the Application
   Insights preview API, and project creation encountered a concurrent
@@ -263,22 +323,18 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
 - The gateway's initial apply created its resource group but failed on the SKU;
   the reviewed recovery plan created the gateway with `Standard`. The gateway
   reported `Succeeded` and its follow-up plan showed no changes. Its remote
-  state uses the isolated `gateway-dev.tfstate` key. The subsequent approved
+  state used an earlier key at that time; current workflow configuration uses
+  `ski-school-gateway.tfstate`. The subsequent approved
   model-route apply created a Foundry provider, model and Responses alias;
   Azure returned their configured properties and the follow-up plan showed no
   changes. No caller grant or end-to-end inference test has been completed.
-- The previous `2026-11-01` gateway child API is published in the
-  [official specification](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/apimanagement/resource-manager/Microsoft.ApiManagement/AIGateway/stable/2026-11-01/openapi.json),
-  but Azure rejected this version for provider, alias and exporter reads on the
-  dev gateway. The approved model-route apply failed during AzAPI's initial
-  provider GET with `MissingOrIncorrectVersionParameter`, before any provider
-  create; model and alias creation were not attempted. The gateway modules now
-  use the `2025-09-01-preview` contracts shown in Microsoft's
-  [gateway sample](https://github.com/Azure-Samples/ai-gateway-foundry-terraform/blob/main/standalone/ai_gateway.tf)
-  and [model sample](https://github.com/Azure-Samples/ai-gateway-foundry-terraform/blob/main/standalone/ai_gateway_models.tf),
-  with individually approved local schema exceptions. Server-side validation
-  remains enabled. The provider, model and alias were created successfully
-  using this preview version; the telemetry exporter remains deferred.
+- An earlier model-route attempt failed during a provider GET before creating
+  the provider, model or alias. The historical recovery used individually
+  approved local schema exceptions and retained server-side validation.
+  Gateway modules and API versions have since changed; inspect the current
+  module configuration and approved contract-specific exceptions rather than
+  treating that recovery as current guidance. The approved evidence sources
+  are listed in the [gateway guide](../docs/gateway.md).
 
 ## References
 

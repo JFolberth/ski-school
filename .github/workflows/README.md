@@ -1,5 +1,10 @@
 # GitHub Actions delivery and Azure access
 
+Start with the [delivery guide](../../docs/delivery.md) for the documentation
+index, state boundaries and approval requirements. Role inventories and
+migration notes below are historical requirements or reported status, not
+confirmation of current Azure access or state.
+
 ## Delivery architecture
 
 The CI/CD entry points are split by deployable root and source path. Pull
@@ -30,7 +35,7 @@ are active.
 
 For resource ownership, root dependencies, regional limits, and the
 infrastructure lifecycle rationale, see the
-[infrastructure architecture overview](../../infra/README.md#architecture-and-deployment-boundaries).
+[infrastructure architecture overview](../../docs/architecture.md).
 
 Track Azure access for the GitHub OIDC deployment identity here as requirements
 are confirmed. Assign Azure RBAC roles to the app registration's service principal
@@ -44,7 +49,7 @@ narrowest supported scope. Documentation changes do not grant or remove access.
 
 | Azure role | Purpose and scope | Requirement / status |
 | --- | --- | --- |
-| Contributor | Manage deployment resources at the target resource-group scopes, with access to referenced resources as needed. Creating resource groups also requires permission at subscription scope. Does not grant role-assignment management or blob data access. | Reported configured. Deployment permission for the gateway and logging CD workflows; frontend CI currently only validates and plans. |
+| Contributor | Manage deployment resources at the target resource-group scopes, with access to referenced resources as needed. Creating resource groups also requires permission at subscription scope. Does not grant role-assignment management or blob data access. | Historically reported configured; verify the target permissions for the workflows being run. |
 | User Access Administrator | Create and manage Terraform-owned role assignments at their target scopes, including the registry and Foundry agent. Contributor alone cannot create these assignments. | Reported configured. Needed for applying role assignments, not for granting runtime access to the deployment identity itself. |
 | AcrPush | Push and pull images using legacy RBAC registry permissions. Scope to the registry. ABAC-enabled registries instead use Container Registry Repository Writer, optionally restricted to specific repositories. | Reported configured. Required when publishing images to ACR, but not used by the current CI image builds, which upload GitHub artifacts instead. |
 | Foundry User | Build and test agents through Foundry project data-plane APIs. Scope to the relevant project, with parent-resource read access where required. | Reported configured. Not required by the current frontend Terraform plan or local image builds. Does not by itself authorize agent publication. |
@@ -67,8 +72,9 @@ plans PR changes under `infra/foundry` or `infra/modules`; CD runs on matching
 pushes to `main` and deploys only after the reusable checks succeed. Both
 target `rg-ski-foundry-dev-ncus` using `infra/foundry/dev.tfvars` and require
 the existing `saterraformstatedevswece/tfstate/ski-school-foundry.tfstate` blob.
-Complete and verify the separate state migration before merging changes that
-trigger Foundry CD; the workflows neither migrate nor initialize empty state.
+Verify that the target state is present and any separately approved migration
+has completed before triggering Foundry CD; the workflows do not perform a
+state migration.
 
 The Foundry plan guard permits only the declared project image-pull role
 assignment outside the Foundry resource group, on the dev registry
@@ -113,7 +119,9 @@ workflow; Backend CD currently enables only DEV.
 Dev explicitly references the existing `Microsoft.DefaultV2` guardrail in
 `infra/backend/dev.tfvars`.
 
-Before enabling delivery:
+Before enabling delivery, verify actual state and permissions. The migration
+item below is historical and applies only if the old-key state still needs to
+be migrated; it is not evidence that a migration is needed or completed:
 
 1. Migrate `backend-dev.tfstate` to `ski-school-backend.tfstate` in the dev
    `saterraformstatedevswece/tfstate` container. Pause all old-key writers,
