@@ -56,8 +56,9 @@ jobs:
           image="ski-school-ci/backend:$GITHUB_SHA"
           docker run --rm --network none "$image" python -I -m pip check
           docker run --rm --network none \
-            -e AI_GATEWAY_BASE_URL=https://example.invalid/models/openai/v1/ \
+            -e AI_GATEWAY_BASE_URL=https://example.invalid/default/models/openai/v1/ \
             -e AI_GATEWAY_MODEL_ALIAS=ci-smoke \
+            -e AI_GATEWAY_MCP_SERVERS='{"ski-tools":{"url":"https://example.invalid/default/toolservers/ski-tools/mcp"}}' \
             "$image" python -I -c 'import runpy; runpy.run_path("main.py")["create_server"]()'
 
   validate:

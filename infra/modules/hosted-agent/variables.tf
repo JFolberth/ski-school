@@ -44,6 +44,14 @@ variable "cpu" {
     error_message = "Supported vCPU values are 0.5, 1 and 2."
   }
 }
+
+variable "existing_agent" {
+  type        = bool
+  description = "Read and verify the existing logical agent's instance identity during a version update. Leave false when creating an agent."
+  default     = false
+  nullable    = false
+}
+
 variable "gateway_base_url" {
   type        = string
   description = "Reviewed full HTTPS gateway model API base URL including the environment-specific route; never derived from region."
@@ -53,6 +61,44 @@ variable "gateway_base_url" {
     error_message = "Supply the reviewed HTTPS model API base URL ending in /, without credentials, whitespace, query or fragment."
   }
 }
+
+variable "gateway_mcp_servers" {
+  type = map(object({
+    url = string
+  }))
+  description = "Named gateway MCP endpoints. The gateway controls tool availability; each server receives its own backend-root role assignment."
+  nullable    = false
+  validation {
+    condition = length(var.gateway_mcp_servers) > 0 && length(var.gateway_mcp_servers) <= 8 && alltrue([
+      for name, server in var.gateway_mcp_servers :
+      can(regex("^[a-z][a-z0-9_-]{0,62}$", name)) &&
+      can(regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/toolservers/(?P<server>[a-zA-Z0-9_-]+)/mcp$",
+        server.url
+      )) &&
+      regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/toolservers/(?P<server>[a-zA-Z0-9_-]+)/mcp$",
+        server.url
+      ).server == name &&
+      lower(regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/toolservers/(?P<server>[a-zA-Z0-9_-]+)/mcp$",
+        server.url
+        ).origin) == lower(regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/models/[^?#]+/$",
+        nonsensitive(var.gateway_base_url)
+      ).origin) &&
+      regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/toolservers/(?P<server>[a-zA-Z0-9_-]+)/mcp$",
+        server.url
+        ).workspace == regex(
+        "^https://(?P<origin>[a-zA-Z0-9.-]+)/(?P<workspace>[a-zA-Z0-9_-]+)/models/[^?#]+/$",
+        nonsensitive(var.gateway_base_url)
+      ).workspace
+    ])
+    error_message = "Configure 1-8 named gateway MCP endpoints on the same origin/workspace as gateway_base_url, each with a matching server name."
+  }
+}
+
 variable "gateway_model_alias" {
   type        = string
   description = "Existing gateway model alias; the caller owns authorization for the platform-created runtime agent principal."
@@ -90,12 +136,6 @@ variable "project_endpoint" {
     condition     = can(regex("^https://[a-zA-Z0-9.-]+/api/projects/[a-zA-Z0-9_-]+/?$", var.project_endpoint))
     error_message = "Use the existing HTTPS project endpoint ending in /api/projects/<project>, without a query."
   }
-}
-variable "existing_agent" {
-  type        = bool
-  description = "Read and verify the existing logical agent's instance identity during a version update. Leave false when creating an agent."
-  default     = false
-  nullable    = false
 }
 variable "rai_policy_id" {
   type        = string

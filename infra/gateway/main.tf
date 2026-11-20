@@ -31,12 +31,15 @@ module "application_insights" {
 }
 
 module "mcp_endpoint" {
-  for_each       = var.mcp_endpoints
-  source         = "../modules/ai-gateway-mcp-endpoint"
-  backend_url    = each.value.backend_url
-  name           = each.key
-  token_audience = each.value.token_audience
-  workspace_id   = local.default_workspace_id
+  for_each           = var.mcp_endpoints
+  source             = "../modules/ai-gateway-mcp-endpoint"
+  allowed_tools      = each.value.allowed_tools
+  backend_url        = each.value.backend_url
+  blocked_tools      = each.value.blocked_tools
+  name               = each.key
+  supported_versions = each.value.supported_versions
+  token_audience     = each.value.token_audience
+  workspace_id       = local.default_workspace_id
 }
 
 module "model_provider" {

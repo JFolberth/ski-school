@@ -4,21 +4,26 @@ resource "azapi_resource" "this" {
   parent_id = var.workspace_id
 
   body = {
-    properties = {
-      displayName    = var.name
-      toolServerType = "mcp"
-      endpoints = [{
-        id   = var.name
-        kind = "mcp"
-        mode = "failClosed"
-        mcp = {
-          endpoint  = { url = var.backend_url }
-          transport = "streamableHttp"
-        }
-        authentication = {
-          managedIdentity = { resource = var.token_audience }
-        }
-      }]
-    }
+    properties = merge(
+      {
+        displayName    = var.name
+        toolServerType = "mcp"
+        endpoints = [{
+          id   = var.name
+          kind = "mcp"
+          mode = "failClosed"
+          mcp = {
+            endpoint  = { url = var.backend_url }
+            transport = "streamableHttp"
+          }
+          authentication = {
+            managedIdentity = { resource = var.token_audience }
+          }
+        }]
+      },
+      var.supported_versions == null ? {} : { versions = var.supported_versions },
+      var.allowed_tools == null ? {} : { allowList = var.allowed_tools },
+      var.blocked_tools == null ? {} : { blockList = var.blocked_tools },
+    )
   }
 }

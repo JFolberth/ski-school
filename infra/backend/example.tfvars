@@ -9,11 +9,17 @@ container_image_repository = "ski-backend"
 cpu                        = "0.5"
 environment                = "dev"
 gateway_base_url           = "https://<reviewed-gateway-host>/<reviewed-model-api-route>/"
-gateway_model_alias        = "<existing-gateway-alias>"
-gateway_model_alias_id     = "/subscriptions/<subscription>/resourceGroups/<gateway-resource-group>/providers/Microsoft.ApiManagement/aigateways/<gateway>/workspaces/<workspace>/aliases/<existing-gateway-alias>"
-idle_timeout_seconds       = 900
-memory                     = "1Gi"
-project_endpoint           = "https://<existing-account>.services.ai.azure.com/api/projects/<existing-project>"
+gateway_mcp_servers = {
+  ski-tools = {
+    url            = "https://<reviewed-gateway-host>/<workspace>/toolservers/ski-tools/mcp"
+    tool_server_id = "/subscriptions/<subscription>/resourceGroups/<gateway-resource-group>/providers/Microsoft.ApiManagement/aigateways/<gateway>/workspaces/<workspace>/toolServers/ski-tools"
+  }
+}
+gateway_model_alias    = "<existing-gateway-alias>"
+gateway_model_alias_id = "/subscriptions/<subscription>/resourceGroups/<gateway-resource-group>/providers/Microsoft.ApiManagement/aigateways/<gateway>/workspaces/<workspace>/aliases/<existing-gateway-alias>"
+idle_timeout_seconds   = 900
+memory                 = "1Gi"
+project_endpoint       = "https://<existing-account>.services.ai.azure.com/api/projects/<existing-project>"
 # Null enables the platform default guardrail; provide a reviewed full policy ARM ID to override it.
 rai_policy_id   = null
 subscription_id = "<workload-subscription-uuid>"

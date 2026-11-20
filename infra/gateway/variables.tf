@@ -108,8 +108,11 @@ variable "model_callers" {
 
 variable "mcp_endpoints" {
   type = map(object({
-    backend_url    = string
-    token_audience = string
+    allowed_tools      = optional(list(string))
+    backend_url        = string
+    blocked_tools      = optional(list(string))
+    supported_versions = optional(list(string))
+    token_audience     = string
   }))
   description = "Streamable HTTP MCP backends keyed by stable gateway server name. Each backend must authorize the gateway's system-assigned identity. Do not include credentials in URLs."
   default     = {}

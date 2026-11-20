@@ -8,7 +8,7 @@ requiredVersions:
 services:
   ski-tools:
     host: azure.ai.toolbox
-    description: Shared public-web research tools for Michigan skiing.
+    description: SnowSure resort and snow data for Michigan skiing through AI Gateway.
     hooks:
       postdeploy:
         - shell: sh
@@ -31,5 +31,7 @@ services:
               ' > /dev/null
           interactive: false
     tools:
-      - type: web_search
-        description: Search the public web for Michigan skiing information and return sources; search results alone do not establish current resort conditions.
+      - type: mcp
+        server_label: snowsure
+        server_url: https://www.snowsure.ai/mcp
+        require_approval: never
