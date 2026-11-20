@@ -196,7 +196,10 @@ runs:
           def markdown:
             @html | gsub("\\|"; "&#124;") | gsub("`"; "&#96;") |
             gsub("\r"; "&#13;") | gsub("\n"; "&#10;");
-          [.resource_changes[]? | select(.change.actions != ["no-op"])] as $changes |
+          def resource_address:
+            if test("\\A[A-Za-z0-9_.\\[\\]\"-]+\\z") then . else "[REDACTED]" end;
+          [.resource_changes[]? |
+            select(.change.actions != ["no-op"] or has("previous_address") or .change.importing != null)] as $changes |
           [$changes[] | select(.mode == "managed")] as $managed |
           [
             "",
@@ -206,11 +209,14 @@ runs:
               "\([$managed[] | select(.change.actions | index("update"))] | length) to change, " +
               "\([$managed[] | select(.change.actions | index("delete"))] | length) to destroy.",
             "",
-            "Replacements count as both add and destroy. The detailed plan follows after target verification.",
+            "Replacements count as both add and destroy. The detailed plan is shown only if the deployment guard passes.",
             "",
             (if $changes | length == 0 then "No resource changes." else
               "| Resource | Actions |", "| --- | --- |",
-              ($changes[] | "| \(.address | markdown) | \(.change.actions | join(" -> ") | markdown) |")
+              ($changes[] | "| \(.address | resource_address | markdown) | \(
+                ([if has("previous_address") then "move" else empty end,
+                  if .change.importing != null then "import" else empty end] + .change.actions) |
+                join(" -> ") | markdown) |")
             end),
             ""
           ] | join("\n")
@@ -218,10 +224,10 @@ runs:
           fail "Cannot generate the sanitized Terraform plan summary."
         fi
         if ! jq -e '
-          def backend_target($subscription; $group):
-            "aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus" as $project |
-            ($subscription + "/resourcegroups/rg-ski-gateway-dev-eus2/providers/microsoft.apimanagement/aigateways/aig-ski-gateway-dev-eus2/workspaces/default/aliases/ski-assistant-dev") as $alias |
-            ($group + "/providers/microsoft.insights/components/appi-ski-foundry-dev-ncus") as $insights |
+          def backend_project:
+            "aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus";
+          def backend_target:
+            backend_project as $project |
             env.TARGET_ENVIRONMENT == "dev" and env.EXPECTED_RESOURCE_GROUP == "rg-ski-foundry-dev-ncus" and
             .variables.project_endpoint.value == ("https://" + $project) and
             .variables.agent_name.value == "ski-backend-dev" and
@@ -229,24 +235,29 @@ runs:
             .variables.acr_login_server.value == "crskiregistrydevncus.azurecr.io" and
             .variables.container_image_repository.value == "ski-backend" and
             (env.TF_VAR_container_image_digest // "" | test("^sha256:[0-9a-f]{64}$")) and
-            .variables.container_image_digest.value == env.TF_VAR_container_image_digest and
-            all(.resource_changes[]? | select(.mode == "managed");
-              (.change.actions | index("delete") | not) and
-              (.change.after as $after |
-                ($after.parent_id // "" | ascii_downcase) as $parent |
-                if .address == "module.agent.azapi_data_plane_resource.this" then
-                  $after.type == "Microsoft.Foundry/agents@v1" and
-                  $after.name == "ski-backend-dev" and $parent == $project
-                elif $after.type == "Microsoft.Authorization/roleAssignments@2022-04-01" then
-                  ($after.body | if type == "string" then fromjson else . end | .properties.roleDefinitionId | ascii_downcase) as $role |
-                  ($subscription + "/providers/microsoft.authorization/roledefinitions/") as $role_prefix |
-                  (.address == "module.agent_gateway_caller.azapi_resource.this" and $parent == $alias and
-                    $role == ($role_prefix + "a6b68e3d-a1f0-4c60-8678-237c050cf4ea")) or
-                  (.address == "module.agent_telemetry_publisher.azapi_resource.this" and $parent == $insights and
-                    $role == ($role_prefix + "3913510d-42f4-4e42-8a64-420c390055eb"))
-                else false end
-              )
-            );
+            .variables.container_image_digest.value == env.TF_VAR_container_image_digest;
+          def backend_scope($subscription; $group; $principal; $parent; $after):
+            ($subscription + "/resourcegroups/rg-ski-gateway-dev-eus2/providers/microsoft.apimanagement/aigateways/aig-ski-gateway-dev-eus2/workspaces/default") as $gateway_workspace |
+            ($group + "/providers/microsoft.insights/components/appi-ski-foundry-dev-ncus") as $insights |
+            if .address == "module.agent.azapi_data_plane_resource.this" then
+              $after.type == "Microsoft.Foundry/agents@v1" and
+              $after.name == "ski-backend-dev" and $parent == backend_project
+            elif $after.type == "Microsoft.Authorization/roleAssignments@2022-04-01" then
+              ($after.body | if type == "string" then fromjson else . end | .properties) as $properties |
+              ($properties.roleDefinitionId // "" | ascii_downcase) as $role |
+              ($subscription + "/providers/microsoft.authorization/roledefinitions/") as $role_prefix |
+              (.address == "module.agent_gateway_caller.azapi_resource.this" and $parent == ($gateway_workspace + "/aliases/ski-assistant-dev") and
+                $role == ($role_prefix + "a6b68e3d-a1f0-4c60-8678-237c050cf4ea")) or
+              (.address == "module.agent_telemetry_publisher.azapi_resource.this" and $parent == $insights and
+                $role == ($role_prefix + "3913510d-42f4-4e42-8a64-420c390055eb")) or
+              # AI Gateway Tools User on the reviewed server, for the backend service principal only.
+              (.address == "module.agent_gateway_tool_caller[\"ski-tools\"].azapi_resource.this" and
+                $parent == ($gateway_workspace + "/toolservers/ski-tools") and
+                $role == ($role_prefix + "dce03f8d-857f-4e40-a90d-67770fa6ecd2") and
+                ($principal | test("^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$"; "i")) and
+                $properties.principalId == $principal and $properties.principalType == "ServicePrincipal" and
+                ($properties | keys) == ["principalId", "principalType", "roleDefinitionId"])
+            else false end;
           def frontend_target($acr; $agent):
             env.TARGET_ENVIRONMENT == "dev" and env.EXPECTED_RESOURCE_GROUP == "rg-ski-frontend-dev-ncus" and
             ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [$acr, $agent] and
@@ -271,26 +282,40 @@ runs:
           (.variables.project_acr_connection.value.registry_id // "" | ascii_downcase) as $acr |
           ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus") as $frontend_acr |
           ($subscription + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev") as $frontend_agent |
-          .errored != true and
-          .variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID and
-          .variables.environment.value == env.TARGET_ENVIRONMENT and
-          (if env.TF_ROOT == "infra/backend" then
-            .variables.tenant_id.value == env.ARM_TENANT_ID and backend_target($subscription; $group)
-          elif env.EXPECTED_RESOURCE_GROUP == "" and env.TF_ROOT != "infra/frontend" then true else
-            (.variables.tenant_id.value == env.ARM_TENANT_ID or
-              (env.TF_ROOT == "infra/frontend" and .variables.tenant_id == null)) and
-            (.planned_values.outputs.resource_group_id.value | ascii_downcase) == $group and
-            (env.TF_ROOT != "infra/frontend" or frontend_target($frontend_acr; $frontend_agent)) and
-            all(.resource_changes[]? | select(.mode == "managed");
-              (.change.actions | index("delete") | not) and
-              (.change.after as $after |
+          (.planned_values.outputs.agent_principal_id.value // "") as $backend_principal |
+          (env.TF_ROOT == "infra/backend" or env.TF_ROOT == "infra/frontend" or env.EXPECTED_RESOURCE_GROUP != "") as $guard_scope |
+          {
+            "plan reported no Terraform errors": (.errored == false),
+            "subscription matches": (.variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID),
+            "environment matches": (.variables.environment.value == env.TARGET_ENVIRONMENT),
+            "tenant matches": (if $guard_scope then
+              .variables.tenant_id.value == env.ARM_TENANT_ID or
+                (env.TF_ROOT == "infra/frontend" and .variables.tenant_id == null)
+              else true end),
+            "resource group matches": (if $guard_scope and env.TF_ROOT != "infra/backend" then
+              ((.planned_values.outputs.resource_group_id.value // "") | ascii_downcase) == $group else true end),
+            "backend agent target and image match": (env.TF_ROOT != "infra/backend" or backend_target),
+            "frontend release target matches": (env.TF_ROOT != "infra/frontend" or frontend_target($frontend_acr; $frontend_agent))
+          } as $checks |
+          {
+            target_errors: [$checks | to_entries[] | select(.value != true) | .key],
+            blocked: [if $guard_scope then
+              .resource_changes[]? | select(.mode == "managed") |
+              if (.change.actions | index("delete")) then
+                {address, reason: "Delete or replacement"}
+              elif env.TF_ROOT == "infra/backend" and (has("previous_address") or .change.importing != null) then
+                {address, reason: "State move or import is not allowed by the deployment guard"}
+              elif env.TF_ROOT == "infra/backend" and .change.actions == ["no-op"] then empty
+              elif (
+                .change.after as $after |
                 ($after.parent_id // "" | ascii_downcase) as $parent |
-                ($parent == $group or ($parent | startswith($group + "/"))) or
-                (($after.type | startswith("Microsoft.Resources/resourceGroups@")) and
+                if env.TF_ROOT == "infra/backend" then backend_scope($subscription; $group; $backend_principal; $parent; $after)
+                else ($parent == $group or ($parent | startswith($group + "/"))) or
+                ((($after.type // "") | startswith("Microsoft.Resources/resourceGroups@")) and
                   $after.name == env.EXPECTED_RESOURCE_GROUP and
                   $parent == $subscription) or
                 (env.TF_ROOT == "infra/gateway" and
-                  ($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
+                  (($after.type // "") | startswith("Microsoft.Authorization/roleAssignments@")) and
                   $parent == $dcr and
                   $parent != "") or
                 # Foundry owns the project identity pull grant on the separately managed dev registry.
@@ -300,28 +325,34 @@ runs:
                   ($after.type | startswith("Microsoft.Authorization/roleAssignments@")) and
                   $parent == $acr and
                   $parent == ($subscription + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus")) or
-                frontend_scope($subscription; $frontend_acr; $frontend_agent; $parent; $after)
-              )
-            )
-          end)' "$DIRECTORY/plan.json" > /dev/null 2> "$DIRECTORY/guard.log"; then
-          if [[ "$TF_ROOT" == "infra/frontend" ]]; then
-            {
-              echo '### Frontend plan guard diagnostics'
-              echo 'The following checks omit planned values and secrets.'
-              if ! jq -r '
-                "subscription_id_matches=\(.variables.subscription_id.value == env.ARM_SUBSCRIPTION_ID)",
-                "tenant_id_matches=\(.variables.tenant_id.value == env.ARM_TENANT_ID or .variables.tenant_id == null)",
-                "environment_matches=\(.variables.environment.value == env.TARGET_ENVIRONMENT)",
-                "resource_group_output_matches=\(try ((.planned_values.outputs.resource_group_id.value | ascii_downcase) == ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/" + (env.EXPECTED_RESOURCE_GROUP | ascii_downcase))) catch false)",
-                "frontend_targets_match=\(try ([.variables.acr_resource_id.value, .variables.foundry_agent_resource_id.value] | map(ascii_downcase)) == [("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-registry-dev-ncus/providers/microsoft.containerregistry/registries/crskiregistrydevncus"), ("/subscriptions/" + (env.ARM_SUBSCRIPTION_ID | ascii_downcase) + "/resourcegroups/rg-ski-foundry-dev-ncus/providers/microsoft.cognitiveservices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev")]) catch false)",
-                "image_repositories_match=\(try ([.variables.container_image_repository.value, .variables.bridge_image_repository.value] == ["ski-school/frontend", "ski-school/bridge"]) catch false)",
-                "managed_resource_changes=\([.resource_changes[]? | select(.mode == "managed") | "\(.address) [\(.change.actions | join(","))]"] | join(", "))"
-              ' "$DIRECTORY/plan.json" | tee -a "$GITHUB_STEP_SUMMARY"; then
-                echo 'Plan diagnostics were unavailable.' >> "$GITHUB_STEP_SUMMARY"
-              fi
-            } 2>/dev/null
+                frontend_scope($subscription; $frontend_acr; $frontend_agent; $parent; $after) end
+              ) then empty else
+                {address, reason: ((if .change.actions == ["no-op"] then "Unchanged resource: " else "" end) +
+                  "Resource type, role, principal, or scope is not allowed by the deployment guard")}
+              end
+            else empty end]
+          }' "$DIRECTORY/plan.json" > "$DIRECTORY/guard.json" 2> "$DIRECTORY/guard.log"; then
+          cat "$DIRECTORY/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          fail "Cannot evaluate the Terraform deployment guard. Check the planned resource schema and guard configuration."
+        fi
+        if ! jq -e '(.target_errors | length == 0) and (.blocked | length == 0)' "$DIRECTORY/guard.json" > /dev/null; then
+          {
+            cat "$DIRECTORY/summary.md"
+            printf '\n### Terraform deployment guard\n\n'
+            jq -r '
+              (.target_errors[] | "- Target check failed: \(.)"),
+              (.blocked[] |
+                (.address | if test("\\A[A-Za-z0-9_.\\[\\]\"-]+\\z") then . else "[REDACTED]" end) as $address |
+                "- `\($address)`: \(.reason)")
+            ' "$DIRECTORY/guard.json"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ "$TF_ROOT" == infra/backend && "$APPLY" == false && "$GITHUB_EVENT_NAME" == pull_request ]] &&
+            jq -e '.target_errors | length == 0' "$DIRECTORY/guard.json" > /dev/null; then
+            echo "::warning::Preview only: review the listed changes. Deployment would block this plan."
+            echo "Preview only: review the listed changes. Deployment would block this plan." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
-          fail "Terraform plan target verification failed, or the plan includes a deletion, replacement, or unapproved scope."
+          fail "Terraform deployment guard rejected the plan. See the failed checks above."
         fi
         if ! terraform -chdir="$TF_ROOT" show -no-color "$DIRECTORY/terraform.tfplan" \
           > "$DIRECTORY/plan.txt" 2> "$DIRECTORY/show-text.log"; then
@@ -336,15 +367,19 @@ runs:
         with open(sys.argv[1], encoding="utf-8") as source:
             plan = json.load(source)
         text = Path(sys.argv[2]).read_text(encoding="utf-8")
-        confidential = re.compile(
+        secret_key = re.compile(
             r"(?i)(secret|password|token|credential|authorization|connection.?string|"
-            r"endpoint|hostname|fqdn|(?:api|access|private|signing)[_-]?key|^key$|^url$)"
+            r"hostname|fqdn|(?:api|access|private|signing)[_-]?key|^key$|^url$)"
         )
+        endpoint_key = re.compile(r"endpoint", re.I)
         values = set()
+        protected = set()
 
-        def collect(value):
+        def collect(value, secret=False):
             if isinstance(value, str) and value:
                 values.add(value)
+                if secret:
+                    protected.add(value)
                 try:
                     nested = json.loads(value)
                 except (ValueError, TypeError):
@@ -353,14 +388,14 @@ runs:
                     scan(nested)
             elif isinstance(value, dict):
                 for child in value.values():
-                    collect(child)
+                    collect(child, secret)
             elif isinstance(value, list):
                 for child in value:
-                    collect(child)
+                    collect(child, secret)
 
         def marked(value, sensitivity):
             if sensitivity is True:
-                collect(value)
+                collect(value, secret=True)
             elif isinstance(value, dict) and isinstance(sensitivity, dict):
                 for key, child in value.items():
                     marked(child, sensitivity.get(key))
@@ -371,9 +406,13 @@ runs:
         def scan(value):
             if isinstance(value, dict):
                 if value.get("sensitive") is True and "value" in value:
-                    collect(value["value"])
+                    collect(value["value"], secret=True)
                 for key, child in value.items():
-                    if confidential.search(key):
+                    if secret_key.search(key):
+                        collect(child, secret=True)
+                    elif endpoint_key.search(key):
+                        # The detailed plan masks endpoint objects wholesale. The policy
+                        # summary only reads public fields, not those objects or their URLs.
                         collect(child)
                     scan(child)
                 for prefix in ("before", "after"):
@@ -389,7 +428,63 @@ runs:
                 if isinstance(nested, (dict, list)):
                     scan(nested)
 
+        def field(value, *path):
+            for key in path:
+                if value is True:
+                    return True
+                value = value.get(key) if isinstance(value, dict) else None
+            return value
+
+        def identifier(value):
+            if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value):
+                return "[REDACTED]"
+            if value in protected:
+                return "[REDACTED]"
+            return f"`{value}`"
+
+        def tool_policy(change, side, key):
+            path = ("body", "properties", key)
+            sensitive = field(change.get(side + "_sensitive"), *path)
+            unknown = field(change.get("after_unknown"), *path) if side == "after" else None
+            if sensitive is True:
+                return "[REDACTED]"
+            if unknown is True:
+                return "Known after apply"
+            items = field(change.get(side), *path)
+            if items is None:
+                return "Not set"
+            if not isinstance(items, list):
+                return "[REDACTED]"
+            return ", ".join(
+                "[REDACTED]" if isinstance(sensitive, list) and i < len(sensitive) and sensitive[i]
+                else "Known after apply" if isinstance(unknown, list) and i < len(unknown) and unknown[i]
+                else identifier(item)
+                for i, item in enumerate(items)
+            ) or "Empty"
+
         scan(plan)
+        policies = []
+        for resource in plan.get("resource_changes", []):
+            change = resource["change"]
+            if (resource.get("mode") != "managed" or resource.get("type") != "azapi_resource"
+                    or change["actions"] == ["no-op"]):
+                continue
+            sides = [side for side in ("before", "after") if change.get(side) is not None]
+            if not any(
+                str(field(change[side], "type")).split("@")[0].lower()
+                == "microsoft.apimanagement/aigateways/workspaces/toolservers"
+                for side in sides
+            ):
+                continue
+            side = sides[-1]
+            name = "[REDACTED]" if field(change.get(side + "_sensitive"), "name") else identifier(
+                field(change[side], "name")
+            )
+            policies.append(f"\n**Server: {name}**\n\n| Policy | Before | Planned |\n| --- | --- | --- |\n")
+            for key, label in (("allowList", "Allow list"), ("blockList", "Block list")):
+                before, after = (tool_policy(change, stage, key) for stage in ("before", "after"))
+                policies.append(f"| {label} | {before} | {after} |\n")
+
         for value in sorted(values, key=len, reverse=True):
             # Match both ordinary and escaped Terraform string representations.
             encoded = json.dumps(value, ensure_ascii=False)[1:-1]
@@ -398,7 +493,8 @@ runs:
                     text = text.replace(candidate, "[REDACTED]")
         text = re.sub(r"(?i)\bhttps?://[^\s\"'<>`\\]+", "[REDACTED URL]", text)
         fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", text)), default=0) + 1)
-        detail = "\n### Detailed Terraform plan\n\nSensitive values and endpoints are redacted.\n\n"
+        detail = "\n### MCP tool server policy\n" + "".join(policies) if policies else ""
+        detail += "\n### Detailed Terraform plan\n\nSensitive values and endpoints are redacted.\n\n"
         detail += f"{fence}terraform\n{text.rstrip()}\n{fence}\n"
         if len(detail.encode("utf-8")) > 900_000:
             raise SystemExit("Detailed plan exceeds the safe job summary size.")
