@@ -48,6 +48,11 @@ output "model_deployment_id" {
   value       = module.model[var.gateway_model_key].id
 }
 
+output "open_meteo_connection_ids" {
+  description = "Anonymous Open-Meteo OpenAPI connection ARM IDs keyed by forecast and historical API."
+  value       = { for key, connection in module.openapi_connection : key => connection.id }
+}
+
 output "project_acr_connection_id" {
   description = "Image-pull connection ARM ID, null when deferred. Project-specific ACR pull RBAC is owned by this Foundry root."
   value       = try(module.project_acr_connection["backend"].id, null)

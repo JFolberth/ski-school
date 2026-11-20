@@ -211,6 +211,7 @@ runs:
         ENVIRONMENT_NAME: ${{ inputs.environment }}
         TENANT_ID: ${{ inputs.tenant-id }}
         PROJECT_ENDPOINT: ${{ steps.target.outputs.project-endpoint }}
+        PROJECT_ID: ${{ inputs.project-id }}
         SUBSCRIPTION_ID: ${{ steps.target.outputs.subscription }}
         RESOURCE_GROUP: ${{ steps.target.outputs.resource-group }}
         LOCATION: ${{ steps.target.outputs.location }}
@@ -231,7 +232,9 @@ runs:
             --subscription "$SUBSCRIPTION_ID" --location "$LOCATION"
           azd env set --cwd "$directory" --environment "$ENVIRONMENT_NAME" \
             "AZURE_TENANT_ID=$TENANT_ID" "AZURE_RESOURCE_GROUP=$RESOURCE_GROUP" \
-            "FOUNDRY_PROJECT_ENDPOINT=$PROJECT_ENDPOINT" "AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT"
+            "FOUNDRY_PROJECT_ENDPOINT=$PROJECT_ENDPOINT" "AZURE_AI_PROJECT_ENDPOINT=$PROJECT_ENDPOINT" \
+            "OPEN_METEO_FORECAST_CONNECTION_ID=$PROJECT_ID/connections/open-meteo-forecast" \
+            "OPEN_METEO_HISTORICAL_CONNECTION_ID=$PROJECT_ID/connections/open-meteo-historical"
           azd deploy "$name" --cwd "$directory" --environment "$ENVIRONMENT_NAME" --no-prompt
           normalized=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
           endpoint=$(azd env get-value "TOOLBOX_${normalized}_MCP_ENDPOINT" \

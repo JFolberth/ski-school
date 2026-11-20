@@ -8,7 +8,7 @@ requiredVersions:
 services:
   ski-tools:
     host: azure.ai.toolbox
-    description: SnowSure resort and snow data for Michigan skiing through AI Gateway.
+    description: Resort and weather data for Michigan skiing through AI Gateway.
     hooks:
       postdeploy:
         - shell: sh
@@ -35,3 +35,23 @@ services:
         server_label: snowsure
         server_url: https://www.snowsure.ai/mcp
         require_approval: never
+      - type: openapi
+        openapi:
+          name: open-meteo-forecast
+          description: Forecast weather, snowfall, and temperature for Michigan resort coordinates.
+          spec:
+            x-open-meteo-source: forecast
+          auth:
+            type: project_connection
+            security_scheme:
+              project_connection_id: ${OPEN_METEO_FORECAST_CONNECTION_ID}
+      - type: openapi
+        openapi:
+          name: open-meteo-historical
+          description: Historical weather, snowfall, and temperature for Michigan resort coordinates and dates.
+          spec:
+            x-open-meteo-source: historical
+          auth:
+            type: project_connection
+            security_scheme:
+              project_connection_id: ${OPEN_METEO_HISTORICAL_CONNECTION_ID}
