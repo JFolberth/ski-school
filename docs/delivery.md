@@ -70,7 +70,7 @@ promotion sequence.
 ### Front Door CI and opt-in CD
 
 Front Door CI runs on PRs targeting `main`; Front Door CD runs on pushes to
-`main`. Both filter on `infra/global/**`, shared modules, the two Front Door workflows,
+`main`. Both filter on `infra/frontdoor/**`, shared modules, the two Front Door workflows,
 reusable Terraform workflows and the listed Terraform composite actions. A
 frontend-only change does not trigger global delivery, and a global-only
 change does not trigger frontend delivery. Shared-module changes can trigger

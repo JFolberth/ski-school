@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - infra/global/**
+      - infra/frontdoor/**
       - infra/modules/**
       - .github/workflows/frontdoor-ci.yml
       - .github/workflows/frontdoor-cd.yml
@@ -30,7 +30,7 @@ jobs:
       id-token: write
     uses: ./.github/workflows/reusable-terraform-checks.yml
     with:
-      terraform-root: infra/global
+      terraform-root: infra/frontdoor
       state-key: ski-school-global.tfstate
       artifact-prefix: global-ci
       environments: >-
@@ -53,6 +53,6 @@ jobs:
       modules-artifact-id: ${{ needs.checks.outputs.modules-artifact-id }}
       modules-artifact-digest: ${{ needs.checks.outputs.modules-artifact-digest }}
       environments: ${{ needs.checks.outputs.environments }}
-      terraform-root: infra/global
+      terraform-root: infra/frontdoor
       artifact-prefix: global-ci
       state-key: ski-school-global.tfstate

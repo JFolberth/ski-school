@@ -51,7 +51,7 @@ staged changes.
 
 ## Global Front Door
 
-[`infra/global`](../infra/global/) owns its resource group and the Front Door
+[`infra/frontdoor`](../infra/frontdoor/) owns its resource group and the Front Door
 resources, not the frontend app or logging workspace. The separate state and
 resource group permit edge configuration to be managed independently of an
 application image release; that lifecycle rationale is an inference from the
