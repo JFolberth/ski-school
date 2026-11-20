@@ -238,34 +238,6 @@ variable "resource_group_id" {
   nullable    = false
 }
 
-variable "session_signing_key" {
-  description = "URL-safe base64 encoding of at least 32 cryptographically random bytes. Supply only through the caller's ephemeral sensitive input; disable Terraform/provider/protocol tracing and AZAPI_LOG_SENSITIVE_DATA."
-  type        = string
-  nullable    = false
-  sensitive   = true
-  ephemeral   = true
-
-  validation {
-    condition = (
-      can(regex("^[A-Za-z0-9_-]{43,}={0,2}$", var.session_signing_key)) &&
-      length(replace(var.session_signing_key, "=", "")) % 4 != 1 &&
-      (!endswith(var.session_signing_key, "=") || length(var.session_signing_key) % 4 == 0)
-    )
-    error_message = "session_signing_key must be URL-safe base64 encoding of at least 32 random bytes, without whitespace."
-  }
-}
-
-variable "session_signing_key_version" {
-  description = "Non-secret rotation identifier; change with every signing-key rotation to roll the revision and invalidate existing session cookies. Never derive it from the key."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.session_signing_key_version))
-    error_message = "session_signing_key_version must be a non-empty, non-secret identifier of at most 64 characters."
-  }
-}
-
 variable "tags" {
   description = "Non-sensitive tags applied to module resources."
   type        = map(string)

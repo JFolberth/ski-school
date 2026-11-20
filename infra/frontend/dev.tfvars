@@ -12,13 +12,12 @@ diagnostic_disabled_categories = [
   "AppEnvSessionPoolEventLogs",
   "AppEnvSessionLifeCycleLogs",
 ]
-environment                 = "dev"
-foundry_agent_resource_id   = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-foundry-dev-ncus/providers/Microsoft.CognitiveServices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev"
-location                    = "northcentralus"
-log_analytics_workspace_id  = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-logs-dev-ncus/providers/Microsoft.OperationalInsights/workspaces/log-ski-logs-dev-eus2"
-resource_group_name         = "rg-ski-frontend-dev-ncus"
-session_signing_key_version = "dev-v1"
-subscription_id             = "9a7e9255-7824-4c0d-a414-366f436f61dd"
+environment                = "dev"
+foundry_agent_resource_id  = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-foundry-dev-ncus/providers/Microsoft.CognitiveServices/accounts/aif-ski-foundry-dev-ncus/projects/proj-ski-foundry-dev-ncus/agents/ski-backend-dev"
+location                   = "northcentralus"
+log_analytics_workspace_id = "/subscriptions/9a7e9255-7824-4c0d-a414-366f436f61dd/resourceGroups/rg-ski-logs-dev-ncus/providers/Microsoft.OperationalInsights/workspaces/log-ski-logs-dev-eus2"
+resource_group_name        = "rg-ski-frontend-dev-ncus"
+subscription_id            = "9a7e9255-7824-4c0d-a414-366f436f61dd"
 tags = {
   workload = "ski-school-frontend"
 }

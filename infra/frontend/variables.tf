@@ -204,34 +204,6 @@ variable "resource_group_name" {
   }
 }
 
-variable "session_signing_key" {
-  description = "URL-safe base64 encoding of at least 32 cryptographically random bytes, supplied securely through TF_VAR_session_signing_key for each operation. Never use tfvars, CLI literals, or Terraform/provider/protocol tracing; keep AZAPI_LOG_SENSITIVE_DATA disabled."
-  type        = string
-  nullable    = false
-  sensitive   = true
-  ephemeral   = true
-
-  validation {
-    condition = (
-      can(regex("^[A-Za-z0-9_-]{43,}={0,2}$", var.session_signing_key)) &&
-      length(replace(var.session_signing_key, "=", "")) % 4 != 1 &&
-      (!endswith(var.session_signing_key, "=") || length(var.session_signing_key) % 4 == 0)
-    )
-    error_message = "session_signing_key must be URL-safe base64 encoding of at least 32 random bytes, without whitespace."
-  }
-}
-
-variable "session_signing_key_version" {
-  description = "Non-secret rotation identifier; change whenever the signing key changes to create a revision that loads the new key. Never derive this identifier from the key. Rotation invalidates existing session cookies."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", var.session_signing_key_version))
-    error_message = "session_signing_key_version must be a non-empty, non-secret identifier of at most 64 characters."
-  }
-}
-
 variable "subscription_id" {
   description = "Reviewed Azure subscription ID in which the new frontend resource group will be created."
   type        = string

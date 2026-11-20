@@ -16,9 +16,6 @@ inputs:
   state-key:
     description: Existing root-specific state key.
     required: true
-  require-session-signing-key:
-    description: Require the frontend runtime secret for frontend plans.
-    default: "true"
   require-existing-state:
     description: Require an existing authenticated backend blob before initialization; never migrate state automatically.
     default: "false"
@@ -53,7 +50,6 @@ runs:
         STATE_ACCOUNT: ${{ inputs.state-account }}
         STATE_CONTAINER: ${{ inputs.state-container }}
         STATE_KEY: ${{ inputs.state-key }}
-        REQUIRE_SIGNING_KEY: ${{ inputs.require-session-signing-key }}
         REQUIRE_EXISTING_STATE: ${{ inputs.require-existing-state }}
         EXPECTED_RESOURCE_GROUP: ${{ inputs.expected-resource-group }}
         APPLY: ${{ inputs.apply }}
@@ -77,9 +73,6 @@ runs:
         : "${ARM_CLIENT_ID:?Required Azure client ID}" "${ARM_TENANT_ID:?Required Azure tenant ID}" \
           "${ARM_SUBSCRIPTION_ID:?Required Azure subscription ID}" "${STATE_ACCOUNT:?Required state account}" \
           "${STATE_CONTAINER:?Required state container}" "${STATE_KEY:?Required state key}"
-        if [[ "$REQUIRE_SIGNING_KEY" == true ]]; then
-          : "${TF_VAR_session_signing_key:?Required frontend session signing key}"
-        fi
         if [[ ! "$APPLY" =~ ^(true|false)$ || ! "$REQUIRE_EXISTING_STATE" =~ ^(true|false)$ ||
           ! "$TARGET_ENVIRONMENT" =~ ^[a-z]{3}$ ]]; then
           echo "::error::Invalid apply, existing-state, or environment configuration."

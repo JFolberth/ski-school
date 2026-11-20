@@ -65,7 +65,6 @@ jobs:
       artifact-prefix: ${{ inputs.artifact-prefix }}
       require-existing-state: ${{ inputs.require-existing-state }}
       require-expected-resource-group: true
-      require-session-signing-key: false
       foundry-agent-url: ${{ inputs.foundry-agent-url }}
       publish-source: false
       environments: ${{ inputs.environments }}

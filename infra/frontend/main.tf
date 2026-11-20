@@ -37,7 +37,5 @@ module "aca" {
   min_replicas                   = var.min_replicas
   name_prefix                    = var.name_prefix
   resource_group_id              = azapi_resource.frontend_resource_group.id
-  session_signing_key            = var.session_signing_key
-  session_signing_key_version    = var.session_signing_key_version
   tags                           = local.tags
 }

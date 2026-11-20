@@ -24,9 +24,6 @@ on:
       retention-days:
         type: number
         default: 7
-      require-session-signing-key:
-        type: boolean
-        default: true
       require-existing-state:
         description: Refuse plans against a missing state blob.
         type: boolean
@@ -43,10 +40,6 @@ on:
         description: Upload root and module sources in each plan job; orchestration workflows may publish a verified bundle separately.
         type: boolean
         default: true
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY:
-        description: Existing ephemeral session key; required only for frontend plans.
-        required: false
     outputs:
       environments:
         description: Validated environment and backend manifest used by the plan matrix.
@@ -158,9 +151,6 @@ jobs:
           state-account: ${{ matrix.environment.state_storage_account }}
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
-          require-session-signing-key: ${{ inputs.require-session-signing-key }}
           require-existing-state: ${{ inputs.require-existing-state }}
           foundry-agent-url: ${{ inputs.foundry-agent-url }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group || '' }}
-        env:
-          TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

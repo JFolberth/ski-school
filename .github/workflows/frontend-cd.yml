@@ -35,8 +35,6 @@ jobs:
     uses: ./.github/workflows/reusable-frontend-checks.yml
     with:
       require-existing-state: true
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
 
   publish:
     name: Publish verified frontend images to ACR
@@ -173,5 +171,3 @@ jobs:
       require-existing-state: true
       image-digest: ${{ needs.publish.outputs.frontend-digest }}
       bridge-image-digest: ${{ needs.publish.outputs.bridge-digest }}
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}

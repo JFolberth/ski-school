@@ -41,11 +41,6 @@ on:
       environments:
         description: Validated frontend environment and backend manifest.
         value: ${{ jobs.terraform.outputs.environments }}
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY:
-        description: Existing frontend session-signing key, passed ephemerally to Terraform.
-        required: false
-
 permissions:
   contents: read
 
@@ -72,14 +67,11 @@ jobs:
       module-path: infra/modules
       state-key: ski-school-frontend.tfstate
       artifact-prefix: frontend-ci
-      require-session-signing-key: true
       require-existing-state: ${{ inputs.require-existing-state }}
       require-expected-resource-group: true
       publish-source: false
       environments: >-
         [{"name":"dev","state_storage_account":"saterraformstatedevswece","state_container":"tfstate","expected_resource_group":"rg-ski-frontend-dev-ncus"}]
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
 
   source:
     name: Publish frontend Terraform source
