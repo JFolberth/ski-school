@@ -23,6 +23,7 @@
 !infra/frontend/dev.tfvars
 !infra/foundry/dev.tfvars
 !infra/gateway/dev.tfvars
+!infra/frontdoor/dev.tfvars
 !infra/logging/dev.tfvars
 !infra/registry/dev.tfvars
 

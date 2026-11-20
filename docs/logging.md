@@ -21,8 +21,10 @@ Azure can also create service-managed resources for the Monitor workspace.
   The Monitor workspace has its own resource-context access configuration.
   Review access and retention before directing application data to either.
 
-Registry and Foundry diagnostics and the frontend environment consume Log
-Analytics; gateway telemetry can use both workspaces. Deploy the workspaces
+Registry, Foundry and global Front Door diagnostics and the frontend environment
+consume Log Analytics; gateway telemetry can use both workspaces. The global
+root enables health-probe logs and metrics, not Front Door access or WAF logs;
+see [global telemetry](frontdoor.md#health-and-telemetry). Deploy the workspaces
 before configuring those consumers. A location, retention, access, or removal
 change can affect downstream diagnostics and telemetry. Inspect all consumers,
 state and the proposed plan before changes; a separate state does not protect

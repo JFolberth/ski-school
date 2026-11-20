@@ -18,7 +18,11 @@ flowchart LR
   Models["Foundry model deployments"]
   Toolbox["Foundry Toolbox<br/>pre-configured tools"]
 
-  Browser -->|HTTPS| Web
+  FrontDoor["Azure Front Door<br/>global edge"]
+
+  Browser -->|HTTPS| FrontDoor
+  FrontDoor -->|HTTPS| Web
+  Browser -.->|direct HTTPS remains available| Web
   Web -->|"/api/messages"| Bridge
   Bridge -->|Responses API| Agent
   Agent -->|model and tool requests| Gateway
@@ -32,7 +36,8 @@ are made when needed.
 ## Documentation
 
 - [Architecture and deployment boundaries](docs/architecture.md)
-- Deployment scopes: [logging](docs/logging.md), [registry](docs/registry.md),
+- Deployment scopes: [global Front Door](docs/frontdoor.md),
+  [logging](docs/logging.md), [registry](docs/registry.md),
   [Foundry](docs/foundry.md), [gateway](docs/gateway.md),
   [backend](docs/backend.md), and [frontend](docs/frontend.md)
 - [Delivery, state, and operational prerequisites](docs/delivery.md)

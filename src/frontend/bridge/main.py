@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import os
 import re
@@ -14,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 LOG = logging.getLogger("ski_school.bridge")
 SCOPE = "https://ai.azure.com/.default"
 MAX_REQUEST_BYTES = 24 * 1024
+REQUEST_TIMEOUT_SECONDS = 220
 MODEL_METADATA_KEY = "ski_school_served_model"
 
 
@@ -74,12 +77,39 @@ async def lifespan(app: FastAPI):
         credential = AzureCliCredential()
     else:
         raise ValueError("BRIDGE_AUTH_MODE must be managed_identity or azure_cli")
+    try:
+        allowed_origins = json.loads(os.environ.get("BRIDGE_ALLOWED_ORIGINS", "[]"))
+        if not isinstance(allowed_origins, list):
+            raise ValueError
+        for origin in allowed_origins:
+            if not isinstance(origin, str):
+                raise ValueError
+            parsed_origin = urlsplit(origin)
+            if (
+                parsed_origin.scheme != "https"
+                or not parsed_origin.hostname
+                or not re.fullmatch(
+                    r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+                    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+                    parsed_origin.hostname,
+                )
+                or parsed_origin.username is not None
+                or parsed_origin.password is not None
+                or parsed_origin.netloc != parsed_origin.hostname
+                or parsed_origin.path
+                or parsed_origin.query
+                or parsed_origin.fragment
+            ):
+                raise ValueError
+    except (ValueError, TypeError) as error:
+        raise ValueError("BRIDGE_ALLOWED_ORIGINS must be a JSON list of exact HTTPS origins") from error
     app.state.local = mode == "azure_cli"
+    app.state.allowed_origins = frozenset(allowed_origins)
     app.state.credential = credential
     app.state.client = httpx.AsyncClient(
         base_url=endpoint.rstrip("/") + "/",
         params={"api-version": "v1"},
-        timeout=300.0,
+        timeout=REQUEST_TIMEOUT_SECONDS,
     )
     try:
         yield
@@ -112,7 +142,7 @@ def check_origin(request: Request) -> bool:
         (parsed.scheme == "https" or (
             app.state.local and parsed.scheme == "http" and hostname in ("localhost", "127.0.0.1")
         ))
-        and parsed.netloc == request.headers.get("host")
+        and (parsed.netloc == request.headers.get("host") or origin in app.state.allowed_origins)
         and not parsed.path
         and not parsed.query
         and not parsed.fragment
@@ -195,7 +225,10 @@ async def send(request: Request):
         ))
     messages.append({"role": "user", "content": message.message})
     try:
-        reply, model = await generate(messages)
-    except UpstreamError:
+        async with asyncio.timeout(REQUEST_TIMEOUT_SECONDS):
+            reply, model = await generate(messages)
+    except (UpstreamError, TimeoutError) as error:
+        if isinstance(error, TimeoutError):
+            LOG.warning("Foundry response exceeded the request deadline")
         return response({"error": "The ski assistant is unavailable. Please try again."}, 503)
     return response({"reply": reply, "model": model})

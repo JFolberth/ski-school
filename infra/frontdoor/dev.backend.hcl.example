@@ -1,0 +1,8 @@
+# Non-secret backend coordinates; initialization requires separate approval.
+# Environment isolation uses a separate storage account and this root-specific key.
+container_name       = "tfstate"
+key                  = "ski-school-global.tfstate"
+resource_group_name  = "rg-terraformstate-dev-swece"
+storage_account_name = "saterraformstatedevswece"
+subscription_id      = "9a7e9255-7824-4c0d-a414-366f436f61dd"
+use_azuread_auth     = true

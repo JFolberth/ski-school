@@ -40,6 +40,9 @@ flowchart TB
 
   subgraph Application["Application infrastructure"]
     direction LR
+    subgraph GlobalRG["Global Front Door resource group (gbl)"]
+      FrontDoor["Front Door<br/>profiles, endpoints and routes"]
+    end
     subgraph FoundryRG["Foundry resource group"]
       direction TB
       Account["Foundry account"]
@@ -69,26 +72,29 @@ flowchart TB
   end
 ```
 
-The logging, registry, Foundry, gateway and frontend resource groups each have
-their own Terraform root and state. Backend has separate state but manages its
-hosted agent in the Foundry project, not a separate resource group. Toolbox
-publication is separate from Terraform. Some roots also manage role assignments
-outside their resource group.
+The logging, registry, Foundry, gateway, frontend and global Front Door resource
+groups each have their own Terraform root and state. Backend has separate state
+but manages its hosted agent in the Foundry project, not a separate resource
+group. Toolbox publication is separate from Terraform. Some roots also manage
+role assignments outside their resource group.
 
-Logging workspace IDs are supplied to Registry, Foundry, Gateway and Frontend.
-The registry supplies image-pull access and published image digests; Foundry
-supplies the project and model details; Gateway supplies the backend's model
-alias and tool endpoints. Frontend receives the agent ID as an explicit input,
-not a Backend Terraform output. The table below describes these handoffs.
+Logging workspace IDs are supplied to Registry, Foundry, Gateway, Frontend and
+Global. The registry supplies image-pull access and published image digests;
+Foundry supplies the project and model details; Gateway supplies the backend's
+model alias and tool endpoints. Frontend receives the agent ID as an explicit
+input, not a Backend Terraform output. Global reads the frontend ingress and
+outputs edge hostnames; the frontend's origin allowlist is configured separately.
+The table below describes these handoffs.
 
 | Terraform root | Ownership and reason for the boundary | Cross-root contract and lifecycle consideration |
 | --- | --- | --- |
-| [`infra/logging`](./logging/) | Owns the logging resource group, Log Analytics workspace, and Azure Monitor workspace. These are shared observability services, not part of an individual app or model release. The workspaces can be in different regions, so root location alone does not determine every resource's region. | Exposes separate workspace IDs for consumers. Registry, Foundry, Gateway, and Frontend receive explicit workspace IDs. Consumers and diagnostic settings must be accounted for before retiring a workspace. |
+| [`infra/logging`](./logging/) | Owns the logging resource group, Log Analytics workspace, and Azure Monitor workspace. These are shared observability services, not part of an individual app or model release. The workspaces can be in different regions, so root location alone does not determine every resource's region. | Exposes separate workspace IDs for consumers. Registry, Foundry, Gateway, Frontend, and Global receive explicit workspace IDs. Consumers and diagnostic settings must be accounted for before retiring a workspace. |
 | [`infra/registry`](./registry/) | Owns the registry resource group, image registry, and its diagnostic settings. The registry lifecycle is separate from application compute and agent configuration; the same registry can hold independently versioned images. | Exposes the registry ID and login server. Foundry owns the project image-pull connection and grant; Backend and Frontend release workflows publish immutable image digests. Retire only after image consumers and releases no longer depend on it. |
 | [`infra/foundry`](./foundry/) | Owns the Foundry account resource group, account, project, model deployments, Application Insights component, account diagnostics, and project-level connections and grants managed by this foundation root. This keeps the account/project foundation and its model configuration together while allowing Gateway and agent releases to change separately. | Receives logging and optional registry inputs. Exposes account, project, model, and telemetry identifiers used by Gateway and Backend. Downstream roots can be independent in state and deployment, but not independent of these resources. |
 | [`infra/gateway`](./gateway/) | Owns the AI Gateway resource group and the gateway routes, model aliases, MCP endpoints, and optional gateway telemetry configuration. This gives gateway policy and routing a separate change and state boundary from the Foundry account and hosted agent. | Receives the Foundry model provider details and logging inputs; emits alias and endpoint identifiers used by Backend. Gateway deletion or replacement can affect agent model/tool access even though the agent has separate state. |
 | [`infra/backend`](./backend/) | Owns the hosted-agent release resource and its runtime grants in Foundry. It does not create a dedicated Azure resource group. Its state and release flow separate application/agent versions from Foundry account and project foundation changes. | Consumes the existing Foundry project, Gateway alias/tool servers, and a published registry image digest. Backend CD validates a candidate version and promotes traffic only after its readiness check; this is a distinct lifecycle from the reusable Terraform apply. |
 | [`infra/frontend`](./frontend/) | Owns the frontend hosting resource group and Container Apps runtime. Keeping the public website runtime separate from the Foundry account and agent release limits unrelated infrastructure plans and lifecycle changes. | Consumes the existing Foundry hosted agent, registry, and logging workspace. The agent resource ID is explicitly supplied in the Frontend root's environment configuration; Backend does not currently export it as a Terraform output. Frontend CD publishes verified frontend and bridge images, then deploys their digests through the shared Terraform deployment workflow. |
+| [`infra/frontdoor`](./frontdoor/) | Owns the global Front Door resource group, profiles, endpoints, origin groups, origins, routes, and diagnostic settings in separate state. | Reads the existing frontend ingress, sends diagnostics to Log Analytics, and outputs endpoint hostnames. Coordinate the frontend origin allowlist separately; see [global Front Door](../docs/frontdoor.md). |
 
 Reusable modules under [`infra/modules`](./modules/) are implementation building
 blocks, not deployment roots or independent state boundaries. Each module's
@@ -112,12 +118,12 @@ resources belong to the state of the root that calls it.
   East US 2. These placements do not represent redundant regional copies.
   The Log Analytics location differs from its variable description in
   `infra/logging/variables.tf`; the overview follows the explicit dev input.
-- The checked-in configuration does not establish region-by-region application
-  replicas, data replication, traffic routing, or regional failover. Therefore,
-  describe this as region-configurable infrastructure, not a deployed
-  multi-region or disaster-recovery architecture. Supporting multiple regional
-  instances independently would require explicit regional target/state
-  identities and cross-root handoffs; those are not currently defined here.
+- Front Door configures routing to origins, but the checked-in configuration
+  does not establish region-by-region application replicas, data replication,
+  or regional failover. It is not a deployed multi-region or disaster-recovery
+  architecture. Supporting multiple regional instances independently would
+  require explicit regional target/state identities and cross-root handoffs;
+  those are not currently defined here.
 
 ### GitHub Actions delivery map
 
@@ -131,6 +137,7 @@ The root-specific CI/CD entry points are:
 | Gateway | [`gateway-ci.yml`](../.github/workflows/gateway-ci.yml) | [`gateway-cd.yml`](../.github/workflows/gateway-cd.yml) |
 | Backend agent | [`backend-ci.yml`](../.github/workflows/backend-ci.yml) | [`backend-cd.yml`](../.github/workflows/backend-cd.yml), including candidate readiness and version promotion |
 | Frontend | [`frontend-ci.yml`](../.github/workflows/frontend-ci.yml) | [`frontend-cd.yml`](../.github/workflows/frontend-cd.yml), including verified image publication |
+| Global Front Door | [`frontdoor-ci.yml`](../.github/workflows/frontdoor-ci.yml) | [`frontdoor-cd.yml`](../.github/workflows/frontdoor-cd.yml), with an opt-in deployment gate |
 
 For Terraform roots, the common path-filtered workflows call
 [`reusable-terraform-checks.yml`](../.github/workflows/reusable-terraform-checks.yml),
@@ -140,8 +147,10 @@ The main-branch deploy workflow verifies the immutable source and module
 artifacts from that run, then makes a fresh plan before applying. A no-change
 plan skips apply. Backend and Frontend add image build, publication, and
 runtime-specific release checks. Foundry packages toolbox source separately
-and deploys it after its Terraform deployment succeeds. These are configuration-level descriptions,
-not evidence that any particular run succeeded.
+and deploys it after its Terraform deployment succeeds. Global deployment
+requires the opt-in described in [Front Door delivery](../docs/delivery.md#front-door-ci-and-opt-in-cd).
+These are configuration-level descriptions, not evidence that any particular
+run succeeded.
 
 The workflows are path-filtered; their own comments caution against making
 them unconditional required checks for every pull request. The repository
@@ -166,7 +175,8 @@ Backend promotion sequence.
 
 ## Initial infrastructure deployment
 
-The Terraform roots in this directory own separate resource groups and state.
+The Terraform roots in this directory have separate state. Except for Backend,
+each owns a separate resource group.
 The initial dev deployment uses the existing logging and registry roots before
 Foundry. The gateway is a later stage; a gateway resource alone does not create
 a usable Foundry model connection. Publishing an agent and its image is also a

@@ -12,6 +12,24 @@ variable "acr_resource_id" {
   }
 }
 
+variable "bridge_allowed_origins" {
+  description = "Exact lowercase HTTPS DNS browser origins additionally trusted by the bridge, without ports or paths; empty preserves direct-origin behavior."
+  type        = list(string)
+  nullable    = false
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for origin in var.bridge_allowed_origins : try(
+        length(trimprefix(origin, "https://")) <= 253 &&
+        can(regex("^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$", origin)),
+        false
+      )
+    ])
+    error_message = "bridge_allowed_origins must contain lowercase HTTPS origins with dotted DNS hostnames, without ports, wildcards, paths, credentials, query strings, or fragments."
+  }
+}
+
 variable "bridge_cpu" {
   description = "CPU cores allocated to the loopback-only FastAPI bridge sidecar."
   type        = number
