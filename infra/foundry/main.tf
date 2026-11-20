@@ -22,6 +22,14 @@ module "project" {
   name         = "proj-${local.suffix}"
 }
 
+module "openapi_connection" {
+  for_each   = local.openapi_connections
+  source     = "../modules/foundry-project-openapi-connection"
+  name       = each.value.name
+  project_id = module.project.id
+  target     = each.value.target
+}
+
 module "model" {
   for_each               = var.models
   source                 = "../modules/model-deployment"

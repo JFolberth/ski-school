@@ -51,8 +51,8 @@ models = {
 }
 mcp_endpoints = {
   ski-tools = {
-    allowed_tools      = ["snowsure___search_resorts", "snowsure___get_resort"]
-    backend_url        = "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/toolboxes/ski-tools/versions/6/mcp?api-version=v1"
+    allowed_tools      = ["snowsure___search_resorts", "snowsure___get_resort", "open-meteo-forecast___get_weather_forecast", "open-meteo-historical___get_historical_weather"]
+    backend_url        = "https://aif-ski-foundry-dev-ncus.services.ai.azure.com/api/projects/proj-ski-foundry-dev-ncus/toolboxes/ski-tools/versions/13/mcp?api-version=v1"
     blocked_tools      = ["snowsure___book_lodging"]
     supported_versions = ["2025-06-18", "2025-11-25"]
     token_audience     = "https://ai.azure.com"

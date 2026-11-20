@@ -46,12 +46,14 @@ runs:
         export SOURCE_DIRECTORY="$directory/release"
         mkdir -p "$SOURCE_DIRECTORY"
         "$parser" - <<'PY'
+        import hashlib
         import json
         import os
         from pathlib import Path
         import re
         import shutil
         import subprocess
+        from urllib.request import urlopen
         import yaml
 
         class UniqueLoader(yaml.SafeLoader):
@@ -89,6 +91,23 @@ runs:
         names = set()
         files = []
         executable_files = []
+        upstream = []
+        revision = "7cc41ffa9a79c2e4c7ad4e18f13b51ab8df610aa"
+        base = f"https://raw.githubusercontent.com/open-meteo/open-meteo/{revision}"
+        specs = {
+            "forecast": ("forecast.yml", "19cf8b43174a67d1964772e566fa7d438bb4d0a0d810a75a1f07a2c71d42a066", "/v1/forecast", "get_weather_forecast", "https://api.open-meteo.com"),
+            "historical": ("historical-weather.yml", "c4243a505032e44ef80a32044c47605e1a28579d2a1146f91aa67eac29f40d77", "/v1/archive", "get_historical_weather", "https://archive-api.open-meteo.com"),
+        }
+
+        def download(url, digest):
+            with urlopen(url, timeout=30) as response:
+                if response.geturl() != url:
+                    raise ValueError(f"Unexpected redirect while fetching {url}")
+                content = response.read(2_000_001)
+            if len(content) > 2_000_000 or hashlib.sha256(content).hexdigest() != digest:
+                raise ValueError(f"Open-Meteo source failed integrity validation: {url}")
+            return content
+
         allowed_suffixes = {".yaml", ".yml", ".json", ".sh", ".py", ".md", ".txt"}
         for manifest in manifests:
             folder = Path(manifest).parent
@@ -118,6 +137,67 @@ runs:
                 raise SystemExit(f"Invalid or duplicate toolbox service in {manifest}.")
             if "infra" in definition or "project" in service:
                 raise SystemExit("Toolbox releases cannot provision infrastructure or use an external service project.")
+            markers = set()
+            for tool in service.get("tools", []):
+                if not isinstance(tool, dict) or tool.get("type") != "openapi":
+                    continue
+                api = tool.get("openapi")
+                if not isinstance(api, dict) or not isinstance(api.get("spec"), dict):
+                    raise SystemExit("OpenAPI tools require a spec object.")
+                spec = api["spec"]
+                if "x-open-meteo-source" not in spec:
+                    continue
+                key = spec["x-open-meteo-source"]
+                if (set(spec) != {"x-open-meteo-source"} or key not in specs
+                        or key in markers or api.get("name") != f"open-meteo-{key}"):
+                    raise SystemExit("Invalid or duplicate Open-Meteo source marker.")
+                filename, digest, path, operation, endpoint = specs[key]
+                url = f"{base}/openapi/{filename}"
+                document = yaml.load(download(url, digest), Loader=UniqueLoader)
+                if (not isinstance(document, dict) or document.get("openapi") != "3.1.0"
+                        or set(document.get("paths", {})) != {path}
+                        or "get" not in document["paths"][path]
+                        or "operationId" in document["paths"][path]["get"]
+                        or {"url": endpoint} not in document["paths"][path].get("servers", [])):
+                    raise SystemExit(f"Unexpected Open-Meteo specification: {key}")
+                document["paths"][path]["get"]["operationId"] = operation
+                for parameter in document["paths"][path]["get"].get("parameters", []):
+                    schema = parameter.get("schema", {})
+                    if parameter.get("in") != "query" or schema.get("type") != "array":
+                        continue
+                    items = schema.get("items", {})
+                    values = items.get("enum")
+                    if (schema.keys() != {"type", "items"} or items.get("type") != "string"
+                            or not isinstance(values, list) or not values
+                            or not all(isinstance(value, str) for value in values)):
+                        raise SystemExit(f"Unexpected Open-Meteo array parameter: {key}")
+                    parameter["schema"] = {"type": "string"}
+                    parameter["description"] = (
+                        f'{parameter.get("description", "").rstrip()} '
+                        f'Use comma-separated values. Supported values: {", ".join(values)}.'
+                    ).strip()
+                document["paths"][path].pop("servers")
+                document["servers"] = [{"url": endpoint}]
+                api["spec"] = document
+                markers.add(key)
+                upstream.append({
+                    "url": url,
+                    "sha256": digest,
+                    "operation_id": operation,
+                    "changes": "Added operationId, selected the non-commercial server, and represented array query parameters as comma-separated strings for Foundry.",
+                })
+            if markers:
+                if markers != set(specs):
+                    raise SystemExit("Both Open-Meteo specifications are required.")
+                license_url = f"{base}/LICENSE"
+                license_digest = "20b067f86de375aae6db0f283ab2e65de24d537733b89bd58432c101259d84cf"
+                license_path = (folder / "open-meteo-license.txt").as_posix()
+                if license_path in selected:
+                    raise SystemExit("Generated Open-Meteo license conflicts with tracked source.")
+                (destination / license_path).write_bytes(download(license_url, license_digest))
+                files.append(license_path)
+                upstream.append({"url": license_url, "sha256": license_digest})
+                (destination / manifest).write_text(yaml.safe_dump(definition, sort_keys=False))
             names.add(name)
             toolboxes.append({"directory": folder.as_posix(), "name": name})
             files.extend(selected)
@@ -131,6 +211,7 @@ runs:
             "toolboxes": toolboxes,
             "files": sorted(files),
             "executable_files": sorted(executable_files),
+            "upstream_sources": upstream,
         }
         (destination / "toolboxes-provenance.json").write_text(json.dumps(provenance, sort_keys=True) + "\n")
         PY

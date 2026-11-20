@@ -12,4 +12,14 @@ locals {
     for key, deployment in var.models :
     key => try(deployment.deployment_name != null ? deployment.deployment_name : "${replace(deployment.model_name, ".", "-")}-${local.suffix}", "")
   }
+  openapi_connections = {
+    forecast = {
+      name   = "open-meteo-forecast"
+      target = "https://api.open-meteo.com"
+    }
+    historical = {
+      name   = "open-meteo-historical"
+      target = "https://archive-api.open-meteo.com"
+    }
+  }
 }
