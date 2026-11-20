@@ -5,6 +5,12 @@
 - Target Foundry hosted agents for the application's AI runtime, not ACA Sandbox. Frontend hosting and any separate public API service remain undecided; do not assume hosted agents also host the website.
 - The Orchestrator and specialist profiles in `.github/agents/` are Copilot coding agents, not application-runtime agents.
 
+# Pull request reviews
+
+- For every pull request, assess whether the change affects deployment documentation, including Terraform resources and state, environment and regional boundaries, identities, GitHub Actions delivery, and application or agent publication.
+- Report missing or inaccurate deployment documentation, including relevant documents outside the diff. Explain the gap using the changed code or configuration and relevant documentation as evidence; do not request documentation for unrelated changes.
+- Distinguish configured behavior from assumptions about live resources, successful workflow runs, failover, or unverified platform capabilities. Do not invent facts or sources.
+
 # Working rules
 
 - Read these instructions and the relevant code before editing. Follow existing patterns, keep changes focused, and do not invent directories, dependencies, APIs, or capabilities.
