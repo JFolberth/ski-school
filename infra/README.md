@@ -1,4 +1,121 @@
-# Initial infrastructure deployment
+# Deployment architecture and initial dev deployment
+
+## Architecture and deployment boundaries
+
+This repository separates infrastructure by resource-group ownership and change
+lifecycle, with an independent Terraform root and state for each deployment
+boundary. The separation allows a root to be planned and applied without
+replanning every resource in the website, but it does not remove dependencies
+between roots. The rationale below is inferred from the checked-in Terraform,
+outputs, environment inputs, and workflows; there is no architecture decision
+record establishing every choice.
+
+```mermaid
+flowchart LR
+  Logs["Logging root<br/>Log Analytics + Monitor workspace"]
+  Registry["Registry root<br/>Container Registry"]
+  Foundry["Foundry root<br/>account, project, models, telemetry"]
+  Gateway["Gateway root<br/>AI Gateway, providers, aliases, MCP"]
+  Backend["Backend root<br/>hosted-agent release"]
+  Frontend["Frontend root<br/>website runtime"]
+
+  Logs -->|"workspace IDs"| Registry
+  Logs -->|"workspace IDs"| Foundry
+  Logs -->|"workspace IDs"| Gateway
+  Logs -->|"workspace ID"| Frontend
+  Registry -->|"registry ID / project image pull"| Foundry
+  Foundry -->|"account and model handoff"| Gateway
+  Foundry -->|"project endpoint"| Backend
+  Gateway -->|"model alias and tool access"| Backend
+  Registry -->|"immutable image digest"| Backend
+  Registry -->|"immutable image digests"| Frontend
+  Backend -->|"agent resource ID supplied to Frontend"| Frontend
+```
+
+| Terraform root | Ownership and reason for the boundary | Cross-root contract and lifecycle consideration |
+| --- | --- | --- |
+| [`infra/logging`](./logging/) | Owns the logging resource group, Log Analytics workspace, and Azure Monitor workspace. These are shared observability services, not part of an individual app or model release. The workspaces can be in different regions, so root location alone does not determine every resource's region. | Exposes separate workspace IDs for consumers. Registry, Foundry, Gateway, and Frontend receive explicit workspace IDs. Consumers and diagnostic settings must be accounted for before retiring a workspace. |
+| [`infra/registry`](./registry/) | Owns the registry resource group, image registry, and its diagnostic settings. The registry lifecycle is separate from application compute and agent configuration; the same registry can hold independently versioned images. | Exposes the registry ID and login server. Foundry owns the project image-pull connection and grant; Backend and Frontend release workflows publish immutable image digests. Retire only after image consumers and releases no longer depend on it. |
+| [`infra/foundry`](./foundry/) | Owns the Foundry account resource group, account, project, model deployments, Application Insights component, account diagnostics, and project-level connections and grants managed by this foundation root. This keeps the account/project foundation and its model configuration together while allowing Gateway and agent releases to change separately. | Receives logging and optional registry inputs. Exposes account, project, model, and telemetry identifiers used by Gateway and Backend. Downstream roots can be independent in state and deployment, but not independent of these resources. |
+| [`infra/gateway`](./gateway/) | Owns the AI Gateway resource group and the gateway routes, model aliases, MCP endpoints, and optional gateway telemetry configuration. This gives gateway policy and routing a separate change and state boundary from the Foundry account and hosted agent. | Receives the Foundry model provider details and logging inputs; emits alias and endpoint identifiers used by Backend. Gateway deletion or replacement can affect agent model/tool access even though the agent has separate state. |
+| [`infra/backend`](./backend/) | Owns the hosted-agent release resource and its runtime grants in Foundry. It does not create a dedicated Azure resource group. Its state and release flow separate application/agent versions from Foundry account and project foundation changes. | Consumes the existing Foundry project, Gateway alias/tool servers, and a published registry image digest. Backend CD validates a candidate version and promotes traffic only after its readiness check; this is a distinct lifecycle from the reusable Terraform apply. |
+| [`infra/frontend`](./frontend/) | Owns the frontend hosting resource group and Container Apps runtime. Keeping the public website runtime separate from the Foundry account and agent release limits unrelated infrastructure plans and lifecycle changes. | Consumes the existing Foundry hosted agent, registry, and logging workspace. The agent resource ID is explicitly supplied in the Frontend root's environment configuration; Backend does not currently export it as a Terraform output. Frontend CD publishes verified frontend and bridge images, then deploys their digests through the shared Terraform deployment workflow. |
+
+Reusable modules under [`infra/modules`](./modules/) are implementation building
+blocks, not deployment roots or independent state boundaries. Each module's
+resources belong to the state of the root that calls it.
+
+### State, regions, and independent deployment
+
+- Each root has its own remote Terraform state key. Backend initialization
+  settings are supplied separately from that root's `.tfvars`; state is not
+  shared automatically between roots. Root outputs and explicit input values
+  form the handoff contract.
+- The CI/CD caller manifests currently select `dev`. They pass one root-specific
+  state key and an environment/backend target to reusable checks and deploy
+  workflows. The reusable workflows can matrix over distinct environments,
+  but the checked-in callers do not define a regional target matrix.
+- Several roots expose location inputs, with per-root validation that can
+  constrain supported regions; selected components also have separate
+  location inputs. In current dev inputs,
+  the Logging resource group is in North Central US while both workspace
+  locations are East US 2; Foundry is in North Central US and Gateway is in
+  East US 2. These placements do not represent redundant regional copies.
+  The Log Analytics location differs from its variable description in
+  `infra/logging/variables.tf`; the overview follows the explicit dev input.
+- The checked-in configuration does not establish region-by-region application
+  replicas, data replication, traffic routing, or regional failover. Therefore,
+  describe this as region-configurable infrastructure, not a deployed
+  multi-region or disaster-recovery architecture. Supporting multiple regional
+  instances independently would require explicit regional target/state
+  identities and cross-root handoffs; those are not currently defined here.
+
+### GitHub Actions delivery map
+
+The root-specific CI/CD entry points are:
+
+| Deployment | Pull request checks | Main-branch release |
+| --- | --- | --- |
+| Logging | [`logging-ci.yml`](../.github/workflows/logging-ci.yml) | [`logging-cd.yml`](../.github/workflows/logging-cd.yml) |
+| Registry | [`registry-ci.yml`](../.github/workflows/registry-ci.yml) | [`registry-cd.yml`](../.github/workflows/registry-cd.yml) |
+| Foundry | [`foundry-ci.yml`](../.github/workflows/foundry-ci.yml) | [`foundry-cd.yml`](../.github/workflows/foundry-cd.yml), which deploys a separately packaged toolbox artifact after Terraform succeeds |
+| Gateway | [`gateway-ci.yml`](../.github/workflows/gateway-ci.yml) | [`gateway-cd.yml`](../.github/workflows/gateway-cd.yml) |
+| Backend agent | [`backend-ci.yml`](../.github/workflows/backend-ci.yml) | [`backend-cd.yml`](../.github/workflows/backend-cd.yml), including candidate readiness and version promotion |
+| Frontend | [`frontend-ci.yml`](../.github/workflows/frontend-ci.yml) | [`frontend-cd.yml`](../.github/workflows/frontend-cd.yml), including verified image publication |
+
+For Terraform roots, the common path-filtered workflows call
+[`reusable-terraform-checks.yml`](../.github/workflows/reusable-terraform-checks.yml),
+which calls the reusable module and Terraform plan workflows. On eligible pull
+requests and main pushes, validation and planning use the selected remote state.
+The main-branch deploy workflow verifies the immutable source and module
+artifacts from that run, then makes a fresh plan before applying. A no-change
+plan skips apply. Backend and Frontend add image build, publication, and
+runtime-specific release checks. Foundry packages toolbox source separately
+and deploys it after its Terraform deployment succeeds. These are configuration-level descriptions,
+not evidence that any particular run succeeded.
+
+The workflows are path-filtered; their own comments caution against making
+them unconditional required checks for every pull request. The repository
+configuration here does not establish which branch rules or required status
+checks are enabled. See [workflow identity and release details](../.github/workflows/README.md)
+for OIDC, role scopes, workload identities, state prerequisites, and the
+Backend promotion sequence.
+
+### Architecture references
+
+- [Azure resource groups and lifecycle management](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal)
+- [Azure regions and availability zones](https://learn.microsoft.com/en-us/azure/well-architected/design-guides/regions-availability-zones)
+- [Terraform remote state and team handoffs](https://developer.hashicorp.com/terraform/language/state/remote)
+- [Terraform state backends](https://developer.hashicorp.com/terraform/language/state/backends)
+- [Terraform Azure Blob backend](https://developer.hashicorp.com/terraform/language/backend/azurerm)
+- [Azure/azapi provider reference](https://registry.terraform.io/providers/Azure/azapi/latest/docs)
+- [Foundry project ARM resource, API version 2026-05-15-preview](https://learn.microsoft.com/en-us/azure/templates/microsoft.cognitiveservices/2026-05-15-preview/accounts/projects)
+- [Foundry hosted-agent management and REST operations](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/manage-hosted-agent)
+- [Foundry REST reference](https://learn.microsoft.com/en-us/azure/foundry/reference/rest/)
+- [AI Gateway documentation](https://ai.gateway.azure.com/docs)
+- [AI Gateway parent resource REST contract, API version 2026-11-01](https://learn.microsoft.com/en-us/rest/api/aigateway/ai-gateway-resources/create-or-update?view=rest-aigateway-2026-11-01)
+
+## Initial infrastructure deployment
 
 The Terraform roots in this directory own separate resource groups and state.
 The initial dev deployment uses the existing logging and registry roots before
@@ -11,8 +128,8 @@ separate lifecycle from provisioning these roots.
 - Install Azure CLI and Terraform `>= 1.11, < 2.0`. Each root pins AzAPI in its
   checked-in lockfile. Sign in with `az login` (or `az login --use-device-code`
   on a remote host), select the intended subscription, and verify the tenant.
-- Each root needs an explicit, ignored `dev.tfvar` passed with
-  `-var-file=dev.tfvar`. Start with that root's `example.tfvars`; supply the
+- Each root needs an explicit, ignored `dev.tfvars` file passed with
+  `-var-file=dev.tfvars`. Start with that root's `example.tfvars`; supply the
   tenant, subscription, and dependent resource IDs explicitly. Terraform does
   not automatically load `.tfvar` files.
 - The backend settings are separate from variables. Copy the relevant
@@ -47,10 +164,13 @@ unexpected changes, replacement, deletion, conflicts, or target differences.
 
 ## Initial dev sequence
 
-1. **Logging (`logging`)**: Log Analytics and its resource group are in North
-   Central US. Azure Monitor workspace is in East US 2 because Azure's provider
-   metadata did not offer that workspace type in North Central US. Set
-   `monitor_workspace_location = "eastus2"` explicitly. Azure also creates a
+1. **Logging (`logging`)**: The resource group is in North Central US. The
+   explicit dev inputs place both Log Analytics and Azure Monitor workspaces
+   in East US 2. The existing deployment note records the Monitor workspace's
+   East US 2 placement as a provider-metadata constraint for North Central US;
+   the Log Analytics region is an explicit dev override, with no separate
+   rationale recorded. Set `monitor_workspace_location = "eastus2"` explicitly.
+   Azure also creates a
    service-managed resource group, data collection rule and endpoint for the
    Monitor workspace. The Log Analytics workspace uses 30-day retention,
    resource-context access and disabled local authentication.
