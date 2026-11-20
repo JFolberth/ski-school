@@ -1,12 +1,6 @@
-import base64
-import binascii
-import hashlib
-import hmac
-import json
 import logging
 import os
 import re
-import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
@@ -15,64 +9,12 @@ from azure.core.exceptions import AzureError
 from azure.identity.aio import AzureCliCredential, ManagedIdentityCredential
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 LOG = logging.getLogger("ski_school.bridge")
 SCOPE = "https://ai.azure.com/.default"
-COOKIE = "__Host-ski-session"
-LIFETIME = 24 * 60 * 60
-CONVERSATION_ID = re.compile(r"^[A-Za-z0-9_-]{1,256}$")
+MAX_REQUEST_BYTES = 24 * 1024
 MODEL_METADATA_KEY = "ski_school_served_model"
-
-
-def setting(name: str) -> str:
-    value = os.environ.get(name, "")
-    if not value or value != value.strip():
-        raise ValueError(f"{name} must be set without surrounding whitespace")
-    return value
-
-
-def decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
-
-def encode(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
-
-
-def session_cookie(conversation_id: str, key: bytes) -> str:
-    payload = encode(json.dumps(
-        {"conversation": conversation_id, "activity": int(time.time())},
-        separators=(",", ":"),
-    ).encode())
-    signature = encode(hmac.digest(key, payload.encode(), hashlib.sha256))
-    return f"{payload}.{signature}"
-
-
-def read_session(value: str | None, key: bytes) -> str | None:
-    if not value:
-        return None
-    try:
-        payload, signature = value.split(".")
-        if not hmac.compare_digest(decode(signature), hmac.digest(key, payload.encode(), hashlib.sha256)):
-            raise ValueError("invalid signature")
-        data = json.loads(decode(payload))
-        conversation_id = data["conversation"]
-        activity = data["activity"]
-        if (
-            not isinstance(conversation_id, str)
-            or not CONVERSATION_ID.fullmatch(conversation_id)
-            or type(activity) is not int
-            or not 0 <= time.time() - activity < LIFETIME
-        ):
-            raise ValueError("invalid session")
-        return conversation_id
-    except (ValueError, KeyError, TypeError, binascii.Error, UnicodeError, json.JSONDecodeError):
-        raise SessionError from None
-
-
-class SessionError(Exception):
-    pass
 
 
 class UpstreamError(Exception):
@@ -98,17 +40,25 @@ def responding_model(result: dict) -> str | None:
     return model
 
 
+class Exchange(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
+    user: str = Field(min_length=1, max_length=2000)
+    assistant: str = Field(min_length=1)
+
+
 class Message(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True, str_strip_whitespace=True)
     message: str = Field(min_length=1, max_length=2000)
+    history: list[Exchange] = Field(default_factory=list, max_length=5)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    endpoint = setting("FOUNDRY_AGENT_BASE_URL")
+    endpoint = os.environ.get("FOUNDRY_AGENT_BASE_URL", "")
     parsed = urlsplit(endpoint)
     if (
-        parsed.scheme != "https"
+        endpoint != endpoint.strip()
+        or parsed.scheme != "https"
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
@@ -117,12 +67,6 @@ async def lifespan(app: FastAPI):
         or not parsed.path.rstrip("/").endswith("/endpoint/protocols/openai")
     ):
         raise ValueError("FOUNDRY_AGENT_BASE_URL must be an HTTPS agent OpenAI endpoint")
-    try:
-        key = decode(setting("SESSION_SIGNING_KEY"))
-    except (ValueError, binascii.Error):
-        raise ValueError("SESSION_SIGNING_KEY must be URL-safe base64") from None
-    if len(key) < 32:
-        raise ValueError("SESSION_SIGNING_KEY must decode to at least 32 bytes")
     mode = os.environ.get("BRIDGE_AUTH_MODE", "managed_identity")
     if mode == "managed_identity":
         credential = ManagedIdentityCredential()
@@ -130,7 +74,6 @@ async def lifespan(app: FastAPI):
         credential = AzureCliCredential()
     else:
         raise ValueError("BRIDGE_AUTH_MODE must be managed_identity or azure_cli")
-    app.state.key = key
     app.state.local = mode == "azure_cli"
     app.state.credential = credential
     app.state.client = httpx.AsyncClient(
@@ -154,14 +97,8 @@ app = FastAPI(
 )
 
 
-def response(data: dict, status: int = 200, conversation_id: str | None = None) -> JSONResponse:
-    result = JSONResponse(data, status_code=status, headers={"Cache-Control": "no-store"})
-    if conversation_id is not None:
-        result.set_cookie(
-            COOKIE, session_cookie(conversation_id, app.state.key),
-            secure=True, httponly=True, samesite="strict", path="/",
-        )
-    return result
+def response(data: dict, status: int = 200) -> JSONResponse:
+    return JSONResponse(data, status_code=status, headers={"Cache-Control": "no-store"})
 
 
 def check_origin(request: Request) -> bool:
@@ -182,93 +119,25 @@ def check_origin(request: Request) -> bool:
     )
 
 
-async def upstream(method: str, path: str, **kwargs) -> dict:
+async def generate(messages: list[dict[str, str]]) -> tuple[str, str | None]:
+    result = None
     try:
         token = await app.state.credential.get_token(SCOPE)
-        result = await app.state.client.request(
-            method, path, headers={"Authorization": f"Bearer {token.token}"}, **kwargs
+        result = await app.state.client.post(
+            "responses",
+            headers={"Authorization": f"Bearer {token.token}"},
+            json={"input": messages, "stream": False, "store": False},
         )
         result.raise_for_status()
         payload = result.json()
-        if not isinstance(payload, dict):
-            raise UpstreamError
-        return payload
-    except (AzureError, httpx.HTTPError, ValueError, UpstreamError) as error:
-        LOG.warning("Foundry request failed (%s)", type(error).__name__)
-        raise UpstreamError from None
-
-
-@app.get("/healthz")
-async def health():
-    return {"status": "ok"}
-
-
-@app.get("/api/conversation")
-async def history(request: Request):
-    try:
-        conversation_id = read_session(request.cookies.get(COOKIE), app.state.key)
-        if not conversation_id:
-            return response({"messages": []})
-        items = []
-        cursor = None
-        for _ in range(20):
-            params = {"order": "asc", "limit": 100}
-            if cursor:
-                params["after"] = cursor
-            page = await upstream("GET", f"conversations/{conversation_id}/items", params=params)
-            data = page.get("data")
-            if not isinstance(data, list) or not isinstance(page.get("has_more"), bool):
-                raise UpstreamError
-            for item in data:
-                if not isinstance(item, dict):
-                    raise UpstreamError
-                if item.get("type") not in ("message", "output_message") or item.get("role") not in ("user", "assistant"):
-                    continue
-                content = item.get("content")
-                if not isinstance(content, list):
-                    raise UpstreamError
-                parts = [part["text"] for part in content if isinstance(part, dict) and part.get("type") in ("input_text", "output_text") and isinstance(part.get("text"), str)]
-                if parts:
-                    entry: dict[str, str | None] = {"role": item["role"], "text": "\n".join(parts)}
-                    if item["role"] == "assistant":
-                        # The pinned host does not persist provider model metadata on messages.
-                        entry["model"] = None
-                    items.append(entry)
-            if not page["has_more"]:
-                return response({"messages": items}, conversation_id=conversation_id)
-            cursor = page.get("last_id")
-            if not isinstance(cursor, str) or not cursor:
-                raise UpstreamError
-        return response({"error": "Conversation history exceeds the display limit."}, 413)
-    except SessionError:
-        return response({"error": "Your chat session expired or is invalid. Start a new chat."}, 401)
-    except UpstreamError:
-        return response({"error": "Conversation history is unavailable. Please try again."}, 503)
-
-
-@app.post("/api/messages")
-async def send(request: Request, message: Message):
-    if not check_origin(request):
-        return response({"error": "Request origin is not allowed."}, 403)
-    text = message.message.strip()
-    if not text:
-        return response({"error": "Enter a message."}, 400)
-    conversation_id = None
-    try:
-        conversation_id = read_session(request.cookies.get(COOKIE), app.state.key)
-        if not conversation_id:
-            created = await upstream("POST", "conversations", json={})
-            new_id = created.get("id")
-            if not isinstance(new_id, str) or not CONVERSATION_ID.fullmatch(new_id):
-                raise UpstreamError
-            conversation_id = new_id
-        result = await upstream("POST", "responses", json={
-            "input": text, "conversation": conversation_id, "stream": False,
-        })
-        if result.get("status") != "completed" or not isinstance(result.get("output"), list):
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status") != "completed"
+            or not isinstance(payload.get("output"), list)
+        ):
             raise UpstreamError
         parts = []
-        for item in result["output"]:
+        for item in payload["output"]:
             if not isinstance(item, dict):
                 raise UpstreamError
             if item.get("type") != "message":
@@ -278,32 +147,55 @@ async def send(request: Request, message: Message):
                 raise UpstreamError
             parts.extend(part["text"] for part in content if isinstance(part, dict)
                          and part.get("type") == "output_text" and isinstance(part.get("text"), str))
-        if not parts:
+        reply = "\n".join(parts)
+        if not reply.strip():
             raise UpstreamError
-        # Only the application's provider-observed metadata carries attribution.
-        return response({"reply": "\n".join(parts), "model": responding_model(result)}, conversation_id=conversation_id)
-    except SessionError:
-        return response({"error": "Your chat session expired or is invalid. Start a new chat."}, 401)
-    except UpstreamError:
-        return response({"error": "The ski assistant is unavailable. Please try again."}, 503, conversation_id)
+        return reply, responding_model(payload)
+    except (AzureError, httpx.HTTPError, ValueError, UpstreamError) as error:
+        request_id = None
+        if result is not None:
+            for name in ("x-ms-request-id", "x-request-id", "apim-request-id"):
+                candidate = result.headers.get(name, "")
+                if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", candidate):
+                    request_id = candidate
+                    break
+        LOG.warning(
+            "Foundry POST responses failed: status=%s request_id=%s error=%s",
+            result.status_code if result is not None else None, request_id, type(error).__name__,
+        )
+        raise UpstreamError from None
 
 
-@app.post("/api/reset")
-async def reset(request: Request):
+@app.get("/healthz")
+async def health():
+    return {"status": "ok"}
+
+
+@app.post("/api/messages")
+async def send(request: Request):
     if not check_origin(request):
         return response({"error": "Request origin is not allowed."}, 403)
+    if request.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
+        return response({"error": "Send the message as JSON."}, 415)
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > MAX_REQUEST_BYTES:
+            return response({"error": "The chat request is too large."}, 413)
+        body.extend(chunk)
     try:
-        conversation_id = read_session(request.cookies.get(COOKIE), app.state.key)
-        if conversation_id:
-            deleted = await upstream("DELETE", f"conversations/{conversation_id}")
-            if deleted.get("deleted") is not True:
-                raise UpstreamError
-        result = response({"ok": True})
-        result.delete_cookie(COOKIE, secure=True, httponly=True, samesite="strict", path="/")
-        return result
-    except SessionError:
-        result = response({"ok": True})
-        result.delete_cookie(COOKIE, secure=True, httponly=True, samesite="strict", path="/")
-        return result
+        message = Message.model_validate_json(body)
+    except ValidationError:
+        return response({"error": "The message or chat history is invalid."}, 422)
+
+    messages = []
+    for exchange in message.history:
+        messages.extend((
+            {"role": "user", "content": exchange.user},
+            {"role": "assistant", "content": exchange.assistant},
+        ))
+    messages.append({"role": "user", "content": message.message})
+    try:
+        reply, model = await generate(messages)
     except UpstreamError:
-        return response({"error": "Could not delete the previous conversation. Please try again."}, 503)
+        return response({"error": "The ski assistant is unavailable. Please try again."}, 503)
+    return response({"reply": reply, "model": model})

@@ -49,11 +49,6 @@ on:
       deployment-metadata:
         description: Validated release metadata from the apply action, when provided by the root.
         value: ${{ jobs.deploy.outputs.deployment-metadata }}
-    secrets:
-      FRONTEND_SESSION_SIGNING_KEY:
-        description: Existing frontend session-signing key, passed ephemerally to Terraform.
-        required: false
-
 permissions:
   contents: read
 
@@ -91,7 +86,6 @@ jobs:
       ARM_SKIP_PROVIDER_REGISTRATION: "true"
       AZAPI_LOG_SENSITIVE_DATA: "false"
       AZURE_CORE_OUTPUT: none
-      TF_VAR_session_signing_key: ${{ secrets.FRONTEND_SESSION_SIGNING_KEY }}
     steps:
       - name: Download and verify the exact CI source and shared modules
         id: download
@@ -221,7 +215,6 @@ jobs:
           state-account: ${{ matrix.environment.state_storage_account }}
           state-container: ${{ matrix.environment.state_container }}
           state-key: ${{ inputs.state-key }}
-          require-session-signing-key: ${{ inputs.terraform-root == 'infra/frontend' }}
           require-existing-state: ${{ inputs.require-existing-state }}
           expected-resource-group: ${{ matrix.environment.expected_resource_group }}
           apply: "true"

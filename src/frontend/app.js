@@ -8,9 +8,11 @@ const messages = document.querySelector("#messages");
 const replyStatus = document.querySelector("#reply-status");
 const suggestions = document.querySelectorAll("[data-prompt]");
 
+const MAX_EXCHANGES = 5;
+const MAX_REQUEST_BYTES = 24 * 1024;
+const encoder = new TextEncoder();
+const history = [];
 let pendingReply = null;
-let loading = true;
-let generation = 0;
 
 async function showDeploymentInfo() {
   try {
@@ -34,9 +36,8 @@ async function showDeploymentInfo() {
 }
 
 function updateSendState() {
-  sendButton.disabled = loading || pendingReply !== null || input.value.trim().length === 0;
-  suggestions.forEach((button) => { button.disabled = loading || pendingReply !== null; });
-  resetButton.disabled = loading;
+  sendButton.disabled = pendingReply !== null || input.value.trim().length === 0;
+  suggestions.forEach((button) => { button.disabled = pendingReply !== null; });
 }
 
 function appendFormattedText(element, text) {
@@ -119,43 +120,21 @@ function appendMessage(role, text, model = null) {
   messages.append(article);
 }
 
-async function api(path, options = {}) {
-  const result = await fetch(path, { ...options, cache: "no-store" });
-  const data = await result.json();
-  if (!result.ok) throw new Error(typeof data.error === "string" ? data.error : "The service is unavailable.");
-  return data;
-}
-
-async function loadHistory() {
-  replyStatus.textContent = "Loading your chat...";
-  try {
-    const data = await api("/api/conversation");
-    if (!Array.isArray(data.messages)) throw new Error("Conversation history is unavailable.");
-    for (const message of data.messages) {
-      if (!["user", "assistant"].includes(message.role) || typeof message.text !== "string") {
-        throw new Error("Conversation history is unavailable.");
-      }
-      appendMessage(message.role, message.text, message.model);
-    }
-    welcome.hidden = data.messages.length > 0;
-    conversation.hidden = data.messages.length === 0;
-    replyStatus.textContent = "";
-    loading = false;
-  } catch (error) {
-    messages.replaceChildren();
-    replyStatus.textContent = `${error.message} Reload the page or start a new chat.`;
-    resetButton.disabled = false;
-    return;
+function messageBody(message) {
+  const exchanges = history.slice();
+  while (true) {
+    const body = JSON.stringify({ message, history: exchanges });
+    if (encoder.encode(body).byteLength <= MAX_REQUEST_BYTES) return body;
+    if (exchanges.length === 0) throw new Error("The chat request is too large.");
+    exchanges.shift();
   }
-  updateSendState();
 }
 
 async function submitMessage(text) {
   const message = text.trim();
-  if (!message || loading || pendingReply !== null) return;
-  const currentGeneration = generation;
-  let finishReply;
-  pendingReply = new Promise((resolve) => { finishReply = resolve; });
+  if (!message || pendingReply !== null) return;
+  const currentReply = new AbortController();
+  pendingReply = currentReply;
   welcome.hidden = true;
   conversation.hidden = false;
   appendMessage("user", message);
@@ -164,21 +143,29 @@ async function submitMessage(text) {
   updateSendState();
   form.scrollIntoView({ block: "nearest" });
   try {
-    const data = await api("/api/messages", {
+    const result = await fetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message }),
+      body: messageBody(message),
+      cache: "no-store",
+      credentials: "omit",
+      signal: currentReply.signal,
     });
-    if (typeof data.reply !== "string" || !data.reply) throw new Error("The assistant returned an empty reply.");
-    if (currentGeneration !== generation) return;
+    const data = result.headers.get("content-type")?.startsWith("application/json")
+      ? await result.json() : null;
+    if (!result.ok) throw new Error(typeof data?.error === "string" ? data.error : "The service is unavailable.");
+    if (typeof data?.reply !== "string" || !data.reply.trim()) throw new Error("The assistant returned an empty reply.");
+    if (pendingReply !== currentReply) return;
+    history.push({ user: message, assistant: data.reply });
+    if (history.length > MAX_EXCHANGES) history.shift();
     appendMessage("assistant", data.reply, data.model);
     replyStatus.textContent = "";
   } catch (error) {
-    if (currentGeneration !== generation) return;
-    replyStatus.textContent = `${error.message} The message may have been received; reload to check.`;
+    if (pendingReply !== currentReply) return;
+    if (!input.value.trim()) input.value = message;
+    replyStatus.textContent = `${error.message} You can send the message again.`;
   } finally {
-    finishReply();
-    if (currentGeneration === generation) {
+    if (pendingReply === currentReply) {
       pendingReply = null;
       updateSendState();
     }
@@ -199,36 +186,19 @@ input.addEventListener("keydown", (event) => {
 suggestions.forEach((button) => {
   button.addEventListener("click", () => submitMessage(button.dataset.prompt));
 });
-resetButton.addEventListener("click", async () => {
-  const historyWasUnavailable = loading;
-  const previousReply = pendingReply;
-  generation += 1;
-  loading = true;
+resetButton.addEventListener("click", () => {
+  pendingReply?.abort();
+  pendingReply = null;
+  history.length = 0;
+  messages.replaceChildren();
+  welcome.hidden = false;
+  conversation.hidden = true;
+  input.value = "";
+  replyStatus.textContent = "New chat started.";
+  input.focus({ preventScroll: true });
+  welcome.scrollIntoView({ block: "start" });
   updateSendState();
-  replyStatus.textContent = previousReply
-    ? "Waiting for the current reply before deleting your chat..."
-    : "Deleting your previous chat...";
-  try {
-    await previousReply;
-    pendingReply = null;
-    replyStatus.textContent = "Deleting your previous chat...";
-    await api("/api/reset", { method: "POST" });
-    messages.replaceChildren();
-    welcome.hidden = false;
-    conversation.hidden = true;
-    input.value = "";
-    replyStatus.textContent = "New chat started.";
-    input.focus({ preventScroll: true });
-    welcome.scrollIntoView({ block: "start" });
-    loading = false;
-  } catch (error) {
-    replyStatus.textContent = error.message;
-    loading = historyWasUnavailable;
-  }
-  updateSendState();
-  if (historyWasUnavailable && loading) resetButton.disabled = false;
 });
 
 showDeploymentInfo();
 updateSendState();
-loadHistory();

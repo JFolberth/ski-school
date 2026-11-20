@@ -141,26 +141,6 @@ resource "azapi_resource" "container_app" {
     "properties.configuration.ingress.fqdn",
   ]
 
-  # Keep the entire array here, never in body or response exports. AzAPI 2.13
-  # merges named arrays by name; owning it in one place avoids partial-array
-  # merges. This module owns the complete ACA secret array.
-  # Intentionally omit sensitive_body_version: unchanged versions
-  # omit fields from PUT. Instead, supply the key on every actual update;
-  # AzAPI stores only a SHA-256 change-detection hash in private state.
-  # https://registry.terraform.io/providers/Azure/azapi/2.13.0/docs/guides/feature_ephemeral_resource
-  sensitive_body = {
-    properties = {
-      configuration = {
-        secrets = [
-          {
-            name  = "session-signing-key"
-            value = var.session_signing_key
-          }
-        ]
-      }
-    }
-  }
-
   body = {
     properties = {
       configuration = {
@@ -266,16 +246,6 @@ resource "azapi_resource" "container_app" {
               {
                 name  = "FOUNDRY_AGENT_BASE_URL"
                 value = trimsuffix(var.foundry_agent_base_url, "/")
-              },
-              {
-                name      = "SESSION_SIGNING_KEY"
-                secretRef = "session-signing-key"
-              },
-              {
-                # Secret changes alone do not restart ACA revisions.
-                # Change this non-secret identifier alongside every rotation.
-                name  = "SESSION_SIGNING_KEY_VERSION"
-                value = var.session_signing_key_version
               }
             ]
             # The image binds 127.0.0.1:8089 for Nginx in the same replica.
