@@ -7,6 +7,39 @@ The checked-in [dev inputs](../infra/frontdoor/dev.tfvars) name the group
 `rg-ski-global-dev-gbl`. Its North Central US location is resource-group
 metadata; the Front Door profile and endpoint are configured as `global`.
 
+## Shared scope and lifecycle
+
+Front Door is **shared edge infrastructure within an environment**, separate
+from the regional frontend's compute and application-image lifecycle. This
+classification does not mean that multiple environments currently share one
+profile. The [dev inputs](../infra/frontdoor/dev.tfvars) select dev-specific
+resource names and one dev frontend, and the [backend](../infra/frontdoor/backend.tf)
+documents environment-isolated state storage. The root is reused across
+environments; its state and resources are not automatically shared across them.
+
+Azure's **global** scope is a different concern: Front Door uses a
+[global edge network](https://learn.microsoft.com/en-us/azure/frontdoor/front-door-overview),
+while the resource-group location determines where its
+[metadata is stored](https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/manage-resource-groups-portal#what-is-a-resource-group).
+The [profile](../infra/modules/frontdoor-profile/main.tf) and
+[endpoint](../infra/modules/frontdoor-endpoint/main.tf) explicitly set
+`location = "global"`. This is not a regional frontend replica or evidence
+of multi-region failover. The root supports additional origins, but dev
+configures only one; adding regions requires separately provisioned regional
+origins and dependencies, explicit origin configuration, and a designed
+replication and failover strategy.
+
+The [root](../infra/frontdoor/main.tf) owns the edge resource group and all its
+profiles and routing resources together in one state. Edge changes can be
+planned separately from frontend image releases, but affect every endpoint
+and origin using the changed profile or origin group. That lifecycle rationale
+is an inference from the code boundary, not a recorded design decision.
+Retiring the edge does not retire the separately owned frontend or logging
+workspace; clients still need a working entry point. Conversely, changes to
+the frontend ingress, its origin allowlist, or the logging workspace require
+coordination despite separate state. See [state and delivery](#state-and-delivery)
+for endpoint replacement and release boundaries.
+
 ## Profiles and routing
 
 The root takes explicit tenant, subscription, resource-group and workspace

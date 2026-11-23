@@ -36,13 +36,13 @@ flowchart TB
     subgraph RegistryRG["Registry resource group"]
       Registry["Container Registry"]
     end
+    subgraph GlobalRG["Global Front Door resource group (gbl)"]
+      FrontDoor["Front Door<br/>profiles, endpoints and routes"]
+    end
   end
 
   subgraph Application["Application infrastructure"]
     direction LR
-    subgraph GlobalRG["Global Front Door resource group (gbl)"]
-      FrontDoor["Front Door<br/>profiles, endpoints and routes"]
-    end
     subgraph FoundryRG["Foundry resource group"]
       direction TB
       Account["Foundry account"]
@@ -78,6 +78,13 @@ but manages its hosted agent in the Foundry project, not a separate resource
 group. Toolbox publication is separate from Terraform. Some roots also manage
 role assignments outside their resource group.
 
+Front Door is shared edge infrastructure within an environment, not part of a
+regional frontend deployment or image release. “Global” describes its Azure
+edge scope, not sharing across environments: checked-in dev inputs target a
+dev-specific resource group and frontend, with environment-isolated state.
+Only one frontend origin is configured; there are no regional replicas or
+configured cross-environment consumers. See [Front Door scope and sharing](../docs/frontdoor.md#shared-scope-and-lifecycle).
+
 Logging workspace IDs are supplied to Registry, Foundry, Gateway, Frontend and
 Global. The registry supplies image-pull access and published image digests;
 Foundry supplies the project and model details; Gateway supplies the backend's
@@ -94,7 +101,7 @@ The table below describes these handoffs.
 | [`infra/gateway`](./gateway/) | Owns the AI Gateway resource group and the gateway routes, model aliases, MCP endpoints, and optional gateway telemetry configuration. This gives gateway policy and routing a separate change and state boundary from the Foundry account and hosted agent. | Receives the Foundry model provider details and logging inputs; emits alias and endpoint identifiers used by Backend. Gateway deletion or replacement can affect agent model/tool access even though the agent has separate state. |
 | [`infra/backend`](./backend/) | Owns the hosted-agent release resource and its runtime grants in Foundry. It does not create a dedicated Azure resource group. Its state and release flow separate application/agent versions from Foundry account and project foundation changes. | Consumes the existing Foundry project, Gateway alias/tool servers, and a published registry image digest. Backend CD validates a candidate version and promotes traffic only after its readiness check; this is a distinct lifecycle from the reusable Terraform apply. |
 | [`infra/frontend`](./frontend/) | Owns the frontend hosting resource group and Container Apps runtime. Keeping the public website runtime separate from the Foundry account and agent release limits unrelated infrastructure plans and lifecycle changes. | Consumes the existing Foundry hosted agent, registry, and logging workspace. The agent resource ID is explicitly supplied in the Frontend root's environment configuration; Backend does not currently export it as a Terraform output. Frontend CD publishes verified frontend and bridge images, then deploys their digests through the shared Terraform deployment workflow. |
-| [`infra/frontdoor`](./frontdoor/) | Owns the global Front Door resource group, profiles, endpoints, origin groups, origins, routes, and diagnostic settings in separate state. | Reads the existing frontend ingress, sends diagnostics to Log Analytics, and outputs endpoint hostnames. Coordinate the frontend origin allowlist separately; see [global Front Door](../docs/frontdoor.md). |
+| [`infra/frontdoor`](./frontdoor/) | Owns shared global-edge infrastructure within an environment: its resource group, profiles, endpoints, origin groups, origins, routes, and diagnostic settings in separate state, outside the regional frontend lifecycle. | Reads the existing frontend ingress, sends diagnostics to Log Analytics, and outputs endpoint hostnames. Coordinate the frontend origin allowlist separately; see [global Front Door](../docs/frontdoor.md). |
 
 Reusable modules under [`infra/modules`](./modules/) are implementation building
 blocks, not deployment roots or independent state boundaries. Each module's

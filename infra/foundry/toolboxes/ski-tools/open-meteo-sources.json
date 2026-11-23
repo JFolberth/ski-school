@@ -1,0 +1,33 @@
+{
+  "revision": "7cc41ffa9a79c2e4c7ad4e18f13b51ab8df610aa",
+  "source_license": {
+    "file": "open-meteo-license.txt",
+    "url": "https://raw.githubusercontent.com/open-meteo/open-meteo/7cc41ffa9a79c2e4c7ad4e18f13b51ab8df610aa/LICENSE",
+    "sha256": "20b067f86de375aae6db0f283ab2e65de24d537733b89bd58432c101259d84cf"
+  },
+  "data_license": {
+    "name": "Attribution 4.0 International (CC BY 4.0)",
+    "url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "definitions": [
+    {
+      "tool": "open-meteo-forecast",
+      "operation_id": "get_weather_forecast",
+      "url": "https://raw.githubusercontent.com/open-meteo/open-meteo/7cc41ffa9a79c2e4c7ad4e18f13b51ab8df610aa/openapi/forecast.yml",
+      "sha256": "19cf8b43174a67d1964772e566fa7d438bb4d0a0d810a75a1f07a2c71d42a066"
+    },
+    {
+      "tool": "open-meteo-historical",
+      "operation_id": "get_historical_weather",
+      "url": "https://raw.githubusercontent.com/open-meteo/open-meteo/7cc41ffa9a79c2e4c7ad4e18f13b51ab8df610aa/openapi/historical-weather.yml",
+      "sha256": "c4243a505032e44ef80a32044c47605e1a28579d2a1146f91aa67eac29f40d77"
+    }
+  ],
+  "modifications": [
+    "Maintain focused OpenAPI 3.1 contracts directly in azure.yaml; publication copies them without network downloads or schema rewriting.",
+    "Keep stable operation IDs, non-commercial endpoints, query schemas and required Fahrenheit/local-time settings; represent array selectors as comma-separated strings.",
+    "Restrict historical inputs to daily mean temperature, precipitation and snowfall; retain skiing forecast choices and the 49-instant short-horizon default.",
+    "Omit broad upstream response-property enumerations. Complete JSON responses pass through to the backend for validation and reduction."
+  ],
+  "maintenance": "Review azure.yaml, pinned upstream references and licensing together when updating these contracts."
+}
