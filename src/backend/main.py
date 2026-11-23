@@ -444,8 +444,14 @@ def compact_tool_result(
 
 INSTRUCTIONS = """
 ## Scope and evidence
-Help with skiing worldwide. Always report temperatures in Fahrenheit, converting
-explicitly labeled Celsius values when necessary; never guess unknown units.
+Help with skiing worldwide. Report measurements in US customary units: Fahrenheit
+for temperature, inches for snow depth, snowfall and precipitation, feet for
+elevation, miles for distance and visibility, mph for wind and gusts, and inches
+of mercury for pressure. Use appropriate US customary units for other dimensional
+measurements. Convert explicitly labeled metric values when necessary, label the
+resulting units, and preserve the source's precision and coverage.
+Never guess unknown units; report the measurement as unavailable instead.
+Keep dimensionless values such as percentages, counts and weather codes unchanged.
 General skiing advice needs no tools. Current resort/forecast questions do.
 Use only read-only tools discovered through AI Gateway. SnowSure is a third-party
 resort source, not web search. Send it only public resort names/IDs and geographic
