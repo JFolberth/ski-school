@@ -1,5 +1,5 @@
 name: Upload CI artifact
-description: Upload required artifact files with shared retention and compression defaults.
+description: Upload required artifact files outside pull requests with shared retention and compression defaults.
 inputs:
   name:
     description: Artifact name.
@@ -18,16 +18,17 @@ inputs:
     default: "false"
 outputs:
   artifact-id:
-    description: Uploaded artifact ID.
+    description: Uploaded artifact ID; empty for pull requests.
     value: ${{ steps.upload.outputs.artifact-id }}
   artifact-digest:
-    description: SHA-256 digest of the immutable uploaded archive.
+    description: SHA-256 digest of the immutable uploaded archive; empty for pull requests.
     value: ${{ steps.upload.outputs.artifact-digest }}
 runs:
   using: composite
   steps:
     - name: Upload artifact
       id: upload
+      if: ${{ github.event_name != 'pull_request' }}
       uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.name }}
