@@ -8,7 +8,7 @@ requiredVersions:
 services:
   ski-tools:
     host: azure.ai.toolbox
-    description: Resort and weather data for Michigan skiing through AI Gateway.
+    description: Worldwide skiing resort operations, snow reports, and weather through AI Gateway.
     hooks:
       postdeploy:
         - shell: sh
@@ -38,9 +38,112 @@ services:
       - type: openapi
         openapi:
           name: open-meteo-forecast
-          description: Forecast weather, snowfall, and temperature for Michigan resort coordinates.
+          description: Skiing weather in Fahrenheit for verified resort coordinates. Request 49 hourly samples for a 48-hour forecast in three-hour periods.
           spec:
-            x-open-meteo-source: forecast
+            openapi: 3.1.0
+            info:
+              title: Open-Meteo skiing forecast
+              version: "1.0"
+              description: Focused contract maintained with open-meteo-sources.json; responses pass through for backend validation and reduction.
+              license:
+                name: Attribution 4.0 International (CC BY 4.0)
+                url: https://creativecommons.org/licenses/by/4.0/
+              termsOfService: https://open-meteo.com/en/features#terms
+            servers:
+              - url: https://api.open-meteo.com
+            paths:
+              /v1/forecast:
+                get:
+                  operationId: get_weather_forecast
+                  parameters:
+                    - name: latitude
+                      in: query
+                      required: true
+                      description: Single verified resort latitude in WGS84.
+                      schema: {type: string}
+                    - name: longitude
+                      in: query
+                      required: true
+                      schema: {type: string}
+                    - name: hourly
+                      in: query
+                      description: >-
+                        Comma-separated skiing variables: temperature_2m, rain, showers,
+                        snowfall, wind_speed_10m, wind_gusts_10m, weather_code.
+                      explode: false
+                      schema: {type: string}
+                    - name: daily
+                      in: query
+                      description: >-
+                        Comma-separated variables: weather_code, temperature_2m_max,
+                        temperature_2m_min, apparent_temperature_max, apparent_temperature_min,
+                        sunrise, sunset, daylight_duration, sunshine_duration, uv_index_max,
+                        uv_index_clear_sky_max, rain_sum, showers_sum, snowfall_sum,
+                        precipitation_sum, precipitation_hours, precipitation_probability_max,
+                        wind_speed_10m_max, wind_gusts_10m_max, wind_direction_10m_dominant,
+                        shortwave_radiation_sum, et0_fao_evapotranspiration.
+                      explode: false
+                      schema: {type: string}
+                    - name: current
+                      in: query
+                      description: >-
+                        Comma-separated variables: temperature_2m, relative_humidity_2m,
+                        apparent_temperature, is_day, precipitation, rain, showers, snowfall,
+                        weather_code, cloud_cover, pressure_msl, surface_pressure,
+                        wind_speed_10m, wind_direction_10m, wind_gusts_10m.
+                      explode: false
+                      schema: {type: string}
+                    - name: elevation
+                      in: query
+                      schema: {type: number, format: float}
+                    - name: temperature_unit
+                      in: query
+                      required: true
+                      schema: {type: string, enum: [fahrenheit], default: fahrenheit}
+                    - name: wind_speed_unit
+                      in: query
+                      schema: {type: string, enum: [kmh, ms, mph, kn], default: kmh}
+                    - name: precipitation_unit
+                      in: query
+                      schema: {type: string, enum: [mm, inch], default: mm}
+                    - name: timeformat
+                      in: query
+                      required: true
+                      description: UTC Unix timestamps for DST-aware conversion in the backend.
+                      schema: {type: string, enum: [unixtime], default: unixtime}
+                    - name: timezone
+                      in: query
+                      required: true
+                      schema: {type: string, enum: [auto], default: auto}
+                    - name: forecast_days
+                      in: query
+                      description: Number of forecast days for longer-range requests.
+                      schema: {type: integer, default: 7, minimum: 0, maximum: 16}
+                    - name: forecast_hours
+                      in: query
+                      description: Use 49 hourly instants to bound 48 forecast hours, reduced to 16 three-hour periods.
+                      schema: {type: integer, default: 49}
+                    - name: start_date
+                      in: query
+                      schema: {type: string, format: date}
+                    - name: end_date
+                      in: query
+                      schema: {type: string, format: date}
+                  responses:
+                    "200":
+                      description: Complete weather JSON; the backend validates and reduces requested data groups.
+                      content:
+                        application/json:
+                          schema: {type: object, additionalProperties: true}
+                    "400":
+                      description: Invalid weather request.
+                      content:
+                        application/json:
+                          schema:
+                            type: object
+                            properties:
+                              error: {type: boolean}
+                              reason: {type: string}
           auth:
             type: project_connection
             security_scheme:
@@ -48,9 +151,91 @@ services:
       - type: openapi
         openapi:
           name: open-meteo-historical
-          description: Historical weather, snowfall, and temperature for Michigan resort coordinates and dates.
+          description: Daily historical average temperature in Fahrenheit, precipitation totals, and snowfall totals for verified resort coordinates and dates. Never request hourly history.
           spec:
-            x-open-meteo-source: historical
+            openapi: 3.1.0
+            info:
+              title: Open-Meteo skiing history
+              version: "1.0"
+              description: Focused contract maintained with open-meteo-sources.json; daily responses are validated and aggregated in the backend.
+              license:
+                name: Attribution 4.0 International (CC BY 4.0)
+                url: https://creativecommons.org/licenses/by/4.0/
+              termsOfService: https://open-meteo.com/en/features#terms
+            servers:
+              - url: https://archive-api.open-meteo.com
+            paths:
+              /v1/archive:
+                get:
+                  operationId: get_historical_weather
+                  parameters:
+                    - name: latitude
+                      in: query
+                      required: true
+                      description: Single verified resort latitude in WGS84.
+                      schema: {type: string}
+                    - name: longitude
+                      in: query
+                      required: true
+                      schema: {type: string}
+                    - name: daily
+                      in: query
+                      required: true
+                      description: Daily mean temperature, total precipitation, and total snowfall; never hourly.
+                      explode: false
+                      schema:
+                        type: string
+                        enum: ["temperature_2m_mean,precipitation_sum,snowfall_sum"]
+                        default: temperature_2m_mean,precipitation_sum,snowfall_sum
+                    - name: start_date
+                      in: query
+                      required: true
+                      schema: {type: string, format: date}
+                    - name: end_date
+                      in: query
+                      required: true
+                      schema: {type: string, format: date}
+                    - name: elevation
+                      in: query
+                      schema: {type: number, format: float}
+                    - name: temperature_unit
+                      in: query
+                      required: true
+                      schema: {type: string, enum: [fahrenheit], default: fahrenheit}
+                    - name: precipitation_unit
+                      in: query
+                      schema: {type: string, enum: [mm, inch], default: mm}
+                    - name: timeformat
+                      in: query
+                      required: true
+                      description: ISO dates for the daily historical series.
+                      schema: {type: string, enum: [iso8601], default: iso8601}
+                    - name: timezone
+                      in: query
+                      required: true
+                      schema: {type: string, enum: [auto], default: auto}
+                    - name: models
+                      in: query
+                      description: >-
+                        Select one model: best_match, era5_seamless, era5, era5_land,
+                        ecmwf_ifs, cerra, era5_ensemble, ecmwf_ifs_analysis_long_window.
+                      explode: false
+                      schema: {type: string}
+                  responses:
+                    "200":
+                      description: Complete daily JSON; the backend validates units, coverage and aggregates.
+                      content:
+                        application/json:
+                          schema: {type: object, additionalProperties: true}
+                    "400":
+                      description: Invalid weather request.
+                      content:
+                        application/json:
+                          schema:
+                            type: object
+                            properties:
+                              error: {type: boolean}
+                              reason: {type: string}
           auth:
             type: project_connection
             security_scheme:

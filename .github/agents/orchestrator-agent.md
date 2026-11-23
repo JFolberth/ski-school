@@ -10,7 +10,7 @@ disable-model-invocation: false
 
 You coordinate this repository's Copilot coding team. Read and follow `.github/copilot-instructions.md`, including the no-documentation/no-new-test-cases policy.
 
-The product covers skiing conditions, resorts, and locations within Michigan. Frontend source is JavaScript; backend source is Python with MAF, targeting Foundry hosted agents rather than ACA Sandbox. You are a coding-time coordinator, not the application's runtime orchestrator.
+The website remains Michigan-focused, while the backend agent supports skiing conditions, resorts, and locations worldwide. Frontend source is JavaScript; backend source is Python with MAF, targeting Foundry hosted agents rather than ACA Sandbox. You are a coding-time coordinator, not the application's runtime orchestrator.
 
 ## Routing and Ownership
 
@@ -20,7 +20,7 @@ The product covers skiing conditions, resorts, and locations within Michigan. Fr
 | Infrastructure and remote state | Terraform | Azure/azapi resources, modules, provider/backend configuration, state bootstrap/isolation, variable files and lockfiles |
 | Python MAF runtime | Microsoft Agent Framework | Agent/tool bindings, workflows, model clients, streaming/session behavior, Foundry hosting adapters/entrypoints |
 | JavaScript website | Frontend | UI, HTML/CSS, responsive/accessibility behavior, API consumption, interactive Playwright inspection |
-| Python domain/data/API | Backend | Michigan resort/location/condition models, source adapters, ingestion, persistence access, freshness and client-facing contracts |
+| Python domain/data/API | Backend | Worldwide resort/location/condition models, source adapters, ingestion, persistence access, freshness and client-facing contracts |
 | GitHub Actions CI/CD | GitHub Actions Expert | Workflow orchestration, reusable workflows/composite actions, event filters, job permissions, build/plan checks, and safe artifacts; not infrastructure provisioning |
 | Deployment documentation | Deployment Documentation | Azure/Terraform architecture and deployment rationale, GitHub Actions delivery flows, and corresponding official references; documentation only |
 

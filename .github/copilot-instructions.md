@@ -1,6 +1,6 @@
 # Project scope
 
-- Build a Michigan-only skiing website focused on skiing conditions, resorts, and locations. Do not expand product scope without a request.
+- Keep the website's Michigan-focused branding, prompts, and frontend behavior unchanged. The Python backend agent supports skiing worldwide, including resort operations, snow reports, forecasts, and historical weather. Do not expand other product scope without a request.
 - Use JavaScript for the frontend and Python with Microsoft Agent Framework (MAF) for the backend and application agents. Do not substitute TypeScript or another backend language. A JavaScript framework and any separate Python web framework have not been selected.
 - Target Foundry hosted agents for the application's AI runtime, not ACA Sandbox. Frontend hosting and any separate public API service remain undecided; do not assume hosted agents also host the website.
 - The Orchestrator and specialist profiles in `.github/agents/` are Copilot coding agents, not application-runtime agents.
