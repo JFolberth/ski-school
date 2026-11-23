@@ -37,7 +37,7 @@ recorded decision for every resource.
 | [Gateway](gateway.md) | Gateway routing, aliases, tool endpoints and optional telemetry. | Alias, model endpoint and tool-server details to backend. |
 | [Backend](backend.md) | Hosted-agent definition and runtime grants, in the existing Foundry project. **No dedicated resource group** is created. | Agent and published version for frontend; state and release lifecycle remain separate. |
 | [Frontend](frontend.md) | Website, bridge and Container Apps runtime. | Uses the logging workspace, registry and an explicitly supplied Foundry agent ID. |
-| [Global Front Door](frontdoor.md) | A separate global-edge resource group per environment: profiles, endpoints, origin groups, origins, routes and diagnostics. | Reads the existing frontend ingress and sends diagnostics to the shared Log Analytics workspace; returns endpoint hostnames for the frontend allowlist. |
+| [Global Front Door](frontdoor.md) | Shared edge infrastructure in a separate resource group per environment, outside the regional frontend lifecycle: profiles, endpoints, origin groups, origins, routes and diagnostics. | Reads the existing frontend ingress and sends diagnostics to the shared Log Analytics workspace; returns endpoint hostnames for the frontend allowlist. |
 
 These seven Terraform roots have separate state, but are not independent of each
 other. Inputs and outputs are supplied explicitly: there is no automatic
@@ -50,6 +50,13 @@ grants before proceeding. Foundry and gateway identity handoffs can require
 staged changes.
 
 ## Global Front Door
+
+Front Door belongs to shared infrastructure, rather than a regional application
+deployment. Its Azure global edge scope does not imply cross-environment
+sharing: dev targets a dev-specific resource group and one frontend origin,
+with separate state storage per environment. No multi-region origin deployment
+is configured. See [scope and sharing](frontdoor.md#shared-scope-and-lifecycle)
+for the configuration evidence and Azure scope references.
 
 [`infra/frontdoor`](../infra/frontdoor/) owns its resource group and the Front Door
 resources, not the frontend app or logging workspace. The separate state and
