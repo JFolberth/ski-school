@@ -39,26 +39,29 @@ flowchart TB
     subgraph GlobalRG["Global Front Door resource group (gbl)"]
       FrontDoor["Front Door<br/>profiles, endpoints and routes"]
     end
+    subgraph SharedAI["Shared AI services"]
+      direction LR
+      subgraph FoundryRG["Foundry resource group"]
+        direction TB
+        Account["Foundry account"]
+        Project["Foundry project"]
+        Models["Model deployments"]
+        Insights["Application Insights"]
+        Agent["Hosted agent<br/>Backend root / separate state"]
+        Toolbox["Foundry Toolbox<br/>separate publication"]
+      end
+      subgraph GatewayRG["Gateway resource group"]
+        direction TB
+        Gateway["AI Gateway"]
+        Routing["Model provider, models + alias"]
+        Tools["Tool endpoints"]
+        GatewayInsights["Optional Application Insights + exporter"]
+      end
+    end
   end
 
   subgraph Application["Application infrastructure"]
     direction LR
-    subgraph FoundryRG["Foundry resource group"]
-      direction TB
-      Account["Foundry account"]
-      Project["Foundry project"]
-      Models["Model deployments"]
-      Insights["Application Insights"]
-      Agent["Hosted agent<br/>Backend root / separate state"]
-      Toolbox["Foundry Toolbox<br/>separate publication"]
-    end
-    subgraph GatewayRG["Gateway resource group"]
-      direction TB
-      Gateway["AI Gateway"]
-      Routing["Model provider, models + alias"]
-      Tools["Tool endpoints"]
-      GatewayInsights["Optional Application Insights + exporter"]
-    end
     subgraph FrontendRG["Frontend resource group"]
       direction TB
       Environment["Container Apps environment"]
