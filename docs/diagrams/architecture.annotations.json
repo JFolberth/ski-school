@@ -1,5 +1,5 @@
 {
-  "title": "Ski school - Azure logical flow (checked-in dev configuration)",
+  "title": "Ski school - Azure logical flow",
   "update": {
     "azurerm_resource_group.global": {"label": "Global Front Door RG | infra/frontdoor | global edge"},
     "azurerm_resource_group.frontend": {"label": "Frontend RG | infra/frontend"},
@@ -36,20 +36,20 @@
     {"from": "azurerm_group.project", "to": "azurerm_container_registry.images", "label": "Pull agent image (project identity)"}
   ],
   "group_details": {
-    "azurerm_resource_group.global": {"title": "Global Front Door RG", "detail": "Owns the Front Door profile, endpoint, routes, origin configuration and diagnostics. The configured origin is the frontend Container App."},
-    "azurerm_resource_group.frontend": {"title": "Frontend RG", "detail": "Owns the Container Apps environment and one Container App running the nginx website and Python bridge containers. It references the registry, logging workspace and hosted agent."},
-    "azurerm_resource_group.foundry": {"title": "Foundry RG", "detail": "Contains the Foundry account, project, model deployments and Foundry Application Insights. The backend root manages the hosted agent in separate state; toolbox publication is separate from Terraform."},
-    "azurerm_resource_group.gateway": {"title": "Gateway RG", "detail": "Owns AI Gateway, model provider and alias configuration, scoped MCP endpoints and the configured Gateway telemetry resources. It routes requests to the Foundry models and toolbox."},
-    "azurerm_resource_group.registry": {"title": "Registry RG", "detail": "Owns the container registry used for frontend, bridge and hosted-agent images. Consumer pull permissions are managed separately in their respective scopes."},
-    "azurerm_resource_group.logging": {"title": "Logging RG", "detail": "Owns the Log Analytics and Azure Monitor workspaces used as configured telemetry destinations. Connections show configuration, not proof of successful ingestion."}
+    "azurerm_resource_group.global": {"title": "Global Front Door RG", "detail": "Owns the global Front Door profile, endpoint, routes and diagnostics. The diagram shows one frontend origin, which remains publicly reachable."},
+    "azurerm_resource_group.frontend": {"title": "Frontend RG", "detail": "Owns one Container App and its Container Apps environment. The bridge uses the app's system-assigned identity to invoke the agent; a separate identity pulls container images. Its origin check is not caller authentication."},
+    "azurerm_resource_group.foundry": {"title": "Foundry RG", "detail": "Contains the Foundry account, project, model deployments and Application Insights. The project identity pulls agent images; the agent has a separate runtime identity. Model and hosted-agent support and quota must be verified for the target region."},
+    "azurerm_resource_group.gateway": {"title": "Gateway RG", "detail": "Owns AI Gateway and its routing, MCP policy and telemetry configuration. The agent uses scoped identity grants to call Gateway; Gateway's system identity needs access to Foundry. Regional support must be verified; the diagram does not establish live availability or failover."},
+    "azurerm_resource_group.registry": {"title": "Registry RG", "detail": "Owns the container registry. The frontend image-pull identity and Foundry project identity receive separate pull permissions; neither is the image publishing identity."},
+    "azurerm_resource_group.logging": {"title": "Logging RG", "detail": "Owns Log Analytics and Azure Monitor workspaces as telemetry destinations. Resource-group metadata and workspace locations can differ; verify regional compatibility for telemetry. Configured connections do not prove successful ingestion."}
   },
   "step_details": [
-    "The browser accesses the configured Front Door hostname over HTTPS. The Container App also has public ingress; Front Door is not the only possible entry point.",
-    "Front Door routes to the frontend Container App origin. nginx serves the JavaScript website and forwards /api/ requests to the Python bridge in the same app.",
-    "The bridge validates the request origin, JSON and chat history, obtains an identity token, and posts the conversation to the hosted agent's Responses API. The agent response returns through the bridge.",
-    "The hosted Microsoft Agent Framework agent uses an OpenAI-compatible client against the Gateway model endpoint. It obtains identity tokens for Gateway model requests and scoped MCP calls.",
-    "The agent requests the configured model alias. Gateway maps that alias to registered Foundry account model deployments according to the checked-in routing configuration; the diagram does not imply live availability or failover.",
-    "The agent discovers tools through the scoped Gateway MCP endpoint and invokes them when needed. Gateway applies the configured tool policy and forwards permitted calls to the Foundry toolbox."
+    "The browser accesses the global Front Door hostname over HTTPS. The Container App also has public ingress; Front Door is not the only possible entry point. The diagram shows one frontend origin, not regional failover.",
+    "Front Door routes over HTTPS to the frontend. nginx serves the JavaScript website and forwards /api/ requests to the Python bridge in the same app.",
+    "The bridge validates the request origin, JSON and chat history, then uses the Container App's system-assigned identity to obtain an Entra token and call the hosted agent's Responses API. Origin validation is not caller authentication.",
+    "The hosted Microsoft Agent Framework agent uses an OpenAI-compatible client against Gateway. Its runtime identity obtains tokens for model and MCP calls, with separate scoped roles for the alias and tool server.",
+    "The agent requests the configured model alias. Gateway's system identity needs access to the Foundry account. Registered deployments and routing do not prove regional model availability or failover.",
+    "The agent discovers and invokes tools through the scoped Gateway MCP endpoint using its runtime identity. Gateway applies the configured tool policy and forwards permitted calls to the Foundry toolbox, whose backend must authorize the Gateway identity."
   ],
   "flows": {
     "request": {

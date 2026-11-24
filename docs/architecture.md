@@ -6,7 +6,7 @@
 
 [![Azure resource-group boundaries and application, image-pull and telemetry flows](diagrams/architecture.svg)](diagrams/architecture.html)
 
-This TerraVision-rendered logical view follows the checked-in dev configuration,
+This TerraVision-rendered logical view follows checked-in configuration,
 not live Azure discovery or a Terraform plan. Backend's separate state remains
 inside the Foundry resource group. See the [diagram sources, legend and
 regeneration guide](diagrams/README.md) and each deployment page for detailed

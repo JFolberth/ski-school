@@ -118,11 +118,22 @@ def route_overview_edges(original, data):
             name for name, resource in data["cluster_id_map"].items()
             if resource == "azurerm_resource_group.gateway"
         )
+        logging = next(
+            name for name, resource in data["cluster_id_map"].items()
+            if resource == "azurerm_resource_group.logging"
+        )
         gateway_nodes = [
             data["meta_data"][resource]["node"].nodeid
             for resource in (
                 "azurerm_ski_ai_gateway.gateway",
                 "azurerm_application_insights.gateway_telemetry",
+            )
+        ]
+        logging_nodes = [
+            data["meta_data"][resource]["node"].nodeid
+            for resource in (
+                "azurerm_log_analytics_workspace.logs",
+                "azurerm_monitor_workspace.metrics",
             )
         ]
         project_box = re.search(
@@ -147,21 +158,26 @@ def route_overview_edges(original, data):
                     f' N[$.name=="{gateway_nodes[0]}" || $.name=="{gateway_nodes[1]}"'
                     f' || (hasAttr($, "_clusterid") && $._clusterid=="{gateway}")]'
                     ' { double gx; double gy; sscanf($.pos, "%lf,%lf", &gx, &gy);'
-                    ' $.pos=sprintf("%.2f,%.2f!", gx, gy+240); }',
+                    ' $.pos=sprintf("%.2f,%.2f!", gx, gy+240); }'
+                    f' N[$.name=="{logging_nodes[0]}" || $.name=="{logging_nodes[1]}"'
+                    f' || (hasAttr($, "_clusterid") && $._clusterid=="{logging}")]'
+                    ' { double lx; double ly; sscanf($.pos, "%lf,%lf", &lx, &ly);'
+                    ' $.pos=sprintf("%.2f,%.2f!", lx, ly-160); }',
                     str(postdot), "-o", str(adjusted),
                 ],
                 check=True,
             )
             dot = adjusted.read_text(encoding="utf-8")
-            pattern = rf'(subgraph "{re.escape(gateway)}"\s*\{{\s*graph \[.*?\bbb=")([^"]+)(")'
+            for cluster, offset in ((gateway, 240), (logging, -160)):
+                pattern = rf'(subgraph "{re.escape(cluster)}"\s*\{{\s*graph \[.*?\bbb=")([^"]+)(")'
 
-            def move_gateway_box(match):
-                x0, y0, x1, y1 = map(float, match.group(2).split(","))
-                return f"{match.group(1)}{x0},{y0 + 240},{x1},{y1 + 240}{match.group(3)}"
+                def move_box(match):
+                    x0, y0, x1, y1 = map(float, match.group(2).split(","))
+                    return f"{match.group(1)}{x0},{y0 + offset},{x1},{y1 + offset}{match.group(3)}"
 
-            dot, count = re.subn(pattern, move_gateway_box, dot, count=1, flags=re.DOTALL)
-            if count != 1:
-                raise ValueError("Gateway boundary missing from laid-out graph")
+                dot, count = re.subn(pattern, move_box, dot, count=1, flags=re.DOTALL)
+                if count != 1:
+                    raise ValueError(f"Boundary missing from laid-out graph: {cluster}")
             adjusted.write_text(dot, encoding="utf-8")
             result = subprocess.run(
                 [

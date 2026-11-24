@@ -38,7 +38,7 @@ are made when needed.
 ![Azure resource groups and request, telemetry, and image-pull flows](docs/diagrams/architecture.png)
 
 Green shows requests, purple shows telemetry, and orange shows image pulls.
-This is a logical view of the checked-in dev configuration, not a live deployment.
+This is a logical view of checked-in configuration, not a live deployment.
 For pan, zoom and animated flow highlighting, download and open the
 [interactive HTML overview](docs/diagrams/architecture.html) locally.
 
