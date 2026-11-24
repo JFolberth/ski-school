@@ -7,6 +7,16 @@ The checked-in [dev inputs](../infra/frontdoor/dev.tfvars) name the group
 `rg-ski-global-dev-gbl`. Its North Central US location is resource-group
 metadata; the Front Door profile and endpoint are configured as `global`.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/frontdoor.html)
+
+[![Front Door endpoint, routing configuration, single frontend origin and logging destination](diagrams/frontdoor.svg)](diagrams/frontdoor.html)
+
+The routing stages are logical configuration within Front Door, not separate
+network hops. The regional frontend remains in its own resource group.
+See the [diagram legend and sources](diagrams/README.md).
+
 ## Shared scope and lifecycle
 
 Front Door is **shared edge infrastructure within an environment**, separate

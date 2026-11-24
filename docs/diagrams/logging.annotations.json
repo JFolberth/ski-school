@@ -1,0 +1,38 @@
+{
+  "title": "Logging - workspace destinations and cross-RG consumers",
+  "update": {
+    "azurerm_resource_group.logging": {"label": "Logging RG | OWNED: infra/logging | RG: North Central US; workspaces: East US 2"},
+    "azurerm_resource_group.registry": {"label": "Registry RG | external consumer"},
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | external consumer"},
+    "azurerm_resource_group.gateway": {"label": "Gateway RG | external consumer"},
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | external consumer"},
+    "azurerm_resource_group.global": {"label": "Global Front Door RG | external consumer"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Log Analytics | 30-day retention"},
+    "azurerm_monitor_workspace.metrics": {"label": "Azure Monitor workspace"},
+    "azurerm_monitor_diagnostic_setting.registry": {"label": "ACR diagnostics"},
+    "azurerm_monitor_diagnostic_setting.foundry": {"label": "Foundry account diagnostics"},
+    "azurerm_application_insights.foundry": {"label": "Foundry App Insights"},
+    "azurerm_application_insights.gateway": {"label": "Gateway OTLP telemetry"},
+    "azurerm_monitor_diagnostic_setting.frontend": {"label": "Environment diagnostics"},
+    "azurerm_application_insights.frontend": {"label": "Frontend App Insights"},
+    "azurerm_monitor_diagnostic_setting.edge": {"label": "Front Door diagnostics"}
+  },
+  "connect": {
+    "azurerm_monitor_diagnostic_setting.registry": [{"azurerm_log_analytics_workspace.logs": "Login + repository events"}],
+    "azurerm_monitor_diagnostic_setting.foundry": [{"azurerm_log_analytics_workspace.logs": "Audit only"}],
+    "azurerm_application_insights.foundry": [{"azurerm_log_analytics_workspace.logs": "Workspace association"}],
+    "azurerm_application_insights.gateway": [{"azurerm_log_analytics_workspace.logs": "OTLP logs / traces"}, {"azurerm_monitor_workspace.metrics": "OTLP metrics"}],
+    "azurerm_monitor_diagnostic_setting.frontend": [{"azurerm_log_analytics_workspace.logs": "Console + system logs"}],
+    "azurerm_application_insights.frontend": [{"azurerm_log_analytics_workspace.logs": "Workspace association only"}],
+    "azurerm_monitor_diagnostic_setting.edge": [{"azurerm_log_analytics_workspace.logs": "Health-probe logs + AllMetrics"}]
+  },
+  "flows": {
+    "destinations": {
+      "description": "Explicit workspace IDs supplied by callers; arrows do not prove ingestion",
+      "steps": [
+        {"resource": "azurerm_log_analytics_workspace.logs", "detail": "Logging exports workspace_id for consumer diagnostics and Application Insights associations."},
+        {"resource": "azurerm_monitor_workspace.metrics", "detail": "Logging exports monitor_workspace_id; dev Gateway enables the OTLP association. Foundry native OTLP is disabled."}
+      ]
+    }
+  }
+}

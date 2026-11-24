@@ -1,0 +1,20 @@
+{
+  "azurerm_resource_group.foundry": ["azurerm_ai_foundry.account", "azurerm_ski_foundry_models.models", "azurerm_group.project", "azurerm_application_insights.telemetry", "azurerm_monitor_diagnostic_setting.account"],
+  "azurerm_group.project": ["azurerm_ski_foundry_project.connections", "azurerm_ai_foundry.toolbox", "azurerm_group.backend_state"],
+  "azurerm_group.backend_state": ["azurerm_ski_foundry_agent.agent"],
+  "azurerm_resource_group.registry": ["azurerm_container_registry.images"],
+  "azurerm_resource_group.gateway": ["azurerm_ski_ai_gateway.gateway"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_ai_foundry.account": ["azurerm_monitor_diagnostic_setting.account"],
+  "azurerm_ski_foundry_project.connections": ["azurerm_container_registry.images", "azurerm_application_insights.telemetry", "tv_azurerm_internet.weather"],
+  "azurerm_ski_ai_gateway.gateway": ["azurerm_ski_foundry_models.models", "azurerm_ai_foundry.toolbox"],
+  "azurerm_ai_foundry.toolbox": ["tv_azurerm_internet.weather", "tv_azurerm_internet.resorts"],
+  "azurerm_ski_foundry_agent.agent": ["azurerm_application_insights.telemetry"],
+  "azurerm_monitor_diagnostic_setting.account": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_application_insights.telemetry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_ski_foundry_models.models": [],
+  "azurerm_container_registry.images": [],
+  "azurerm_log_analytics_workspace.logs": [],
+  "tv_azurerm_internet.weather": [],
+  "tv_azurerm_internet.resorts": []
+}

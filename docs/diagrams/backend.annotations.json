@@ -1,0 +1,39 @@
+{
+  "title": "Backend - separate release state inside the existing Foundry RG",
+  "update": {
+    "azurerm_resource_group.foundry": {"label": "EXISTING Foundry RG | owned by infra/foundry | North Central US"},
+    "azurerm_group.project": {"label": "Existing Foundry project | foundation-owned"},
+    "azurerm_group.backend_state": {"label": "OWNED: infra/backend | hosted-agent definition | NO dedicated RG"},
+    "azurerm_resource_group.gateway": {"label": "Gateway RG | external | Backend owns runtime grants at these scopes"},
+    "azurerm_resource_group.registry": {"label": "Registry RG | external; project pull grant owned by Foundry"},
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | external caller"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external | workspace: East US 2"},
+    "tv_azurerm_client.release": {"label": "Backend CD release"},
+    "azurerm_container_app.bridge": {"label": "Bridge system identity"},
+    "azurerm_ski_foundry_project.project": {"label": "Project image-pull identity"},
+    "azurerm_ski_foundry_agent.agent": {"label": "Hosted MAF agent"},
+    "azurerm_api_management_api.alias": {"label": "Gateway model alias"},
+    "azurerm_api_management_api.mcp": {"label": "Gateway MCP tool server"},
+    "azurerm_container_registry.images": {"label": "Backend image digest"},
+    "azurerm_application_insights.telemetry": {"label": "Foundry App Insights"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Shared Log Analytics"}
+  },
+  "connect": {
+    "tv_azurerm_client.release": [{"azurerm_container_registry.images": "Publish immutable image"}, {"azurerm_ski_foundry_agent.agent": "Terraform definition, then readiness / promotion"}],
+    "azurerm_container_app.bridge": [{"azurerm_ski_foundry_agent.agent": "Responses endpoint (Frontend-owned grant)"}],
+    "azurerm_ski_foundry_project.project": [{"azurerm_container_registry.images": "Pull image (NOT agent runtime identity)"}],
+    "azurerm_ski_foundry_agent.agent": [{"azurerm_api_management_api.alias": "Inference | Models User scope"}, {"azurerm_api_management_api.mcp": "Discover / call | Tools User scope"}, {"azurerm_application_insights.telemetry": "Publish telemetry | component scope"}],
+    "azurerm_application_insights.telemetry": [{"azurerm_log_analytics_workspace.logs": "Workspace association"}]
+  },
+  "flows": {
+    "runtime": {
+      "description": "Runtime calls and release operations have different identities and owners",
+      "steps": [
+        {"resource": "azurerm_container_app.bridge -> azurerm_ski_foundry_agent.agent", "detail": "The frontend invokes the existing agent. Frontend receives the agent ID explicitly, not as a Backend Terraform output."},
+        {"resource": "azurerm_ski_foundry_agent.agent -> azurerm_api_management_api.alias", "detail": "Backend grants the returned agent identity model-alias access."},
+        {"resource": "azurerm_ski_foundry_agent.agent -> azurerm_api_management_api.mcp", "detail": "Backend grants that runtime identity access to each supplied tool-server scope."},
+        {"resource": "azurerm_ski_foundry_agent.agent -> azurerm_application_insights.telemetry", "detail": "Backend grants telemetry publishing on the existing Foundry component; it does not provision that component."}
+      ]
+    }
+  }
+}

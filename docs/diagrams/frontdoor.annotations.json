@@ -1,0 +1,37 @@
+{
+  "title": "Front Door - environment-specific global edge and regional origin",
+  "update": {
+    "azurerm_resource_group.global": {"label": "Global Front Door RG | OWNED: infra/frontdoor | services: global; RG metadata: North Central US"},
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | external origin | North Central US"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external destination | workspace: East US 2"},
+    "tv_azurerm_users.browser": {"label": "Browser"},
+    "azurerm_cdn_frontdoor_profile.profile": {"label": "Front Door Standard profile"},
+    "azurerm_cdn_frontdoor_endpoint.endpoint": {"label": "Public edge endpoint"},
+    "azurerm_cdn_frontdoor_route.route": {"label": "HTTPS route"},
+    "azurerm_cdn_frontdoor_origin_group.origin_group": {"label": "Origin group + probes"},
+    "azurerm_cdn_frontdoor_origin.origin": {"label": "ONE configured frontend origin"},
+    "azurerm_container_app.website": {"label": "Existing frontend ingress"},
+    "azurerm_monitor_diagnostic_setting.edge": {"label": "Profile diagnostic setting"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Shared Log Analytics"}
+  },
+  "connect": {
+    "tv_azurerm_users.browser": [{"azurerm_cdn_frontdoor_endpoint.endpoint": "HTTPS"}],
+    "azurerm_cdn_frontdoor_endpoint.endpoint": [{"azurerm_cdn_frontdoor_route.route": "Match route"}],
+    "azurerm_cdn_frontdoor_route.route": [{"azurerm_cdn_frontdoor_origin_group.origin_group": "Select origin group"}],
+    "azurerm_cdn_frontdoor_origin_group.origin_group": [{"azurerm_cdn_frontdoor_origin.origin": "Probe / select configured origin"}],
+    "azurerm_cdn_frontdoor_origin.origin": [{"azurerm_container_app.website": "HTTPS to discovered ingress FQDN"}],
+    "azurerm_cdn_frontdoor_profile.profile": [{"azurerm_monitor_diagnostic_setting.edge": "Profile diagnostics"}],
+    "azurerm_monitor_diagnostic_setting.edge": [{"azurerm_log_analytics_workspace.logs": "Health-probe logs + AllMetrics"}]
+  },
+  "flows": {
+    "edge": {
+      "description": "Logical routing configuration, not extra network hops or verified failover",
+      "steps": [
+        {"resource": "tv_azurerm_users.browser -> azurerm_cdn_frontdoor_endpoint.endpoint", "detail": "The dev hostname belongs to an environment-specific profile, not a profile shared across environments."},
+        {"resource": "azurerm_cdn_frontdoor_route.route -> azurerm_cdn_frontdoor_origin_group.origin_group", "detail": "Endpoint, route and origin group are configuration stages of Front Door, not separate proxy services."},
+        {"resource": "azurerm_cdn_frontdoor_origin.origin -> azurerm_container_app.website", "detail": "The root reads the existing frontend ingress. Only one origin is configured; no regional replica/failover is established."},
+        {"resource": "azurerm_monitor_diagnostic_setting.edge -> azurerm_log_analytics_workspace.logs", "detail": "Access and WAF logs are disabled. Reconcile the generated edge hostname with the frontend origin allowlist separately."}
+      ]
+    }
+  }
+}

@@ -6,6 +6,16 @@ frontend and hosted-agent lifecycles permits independently managed image
 publication and access. Existing consumers remain dependent on its repositories
 and retained image digests.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/registry.html)
+
+[![Registry image publication, consumer pull identities and logging flow](diagrams/registry.svg)](diagrams/registry.html)
+
+Publication, project image pulls and frontend image pulls have distinct owners
+and identities. External resource-group boxes are dependencies, not resources
+owned by this root. See the [diagram legend and sources](diagrams/README.md).
+
 ## Configuration and handoffs
 
 - `registry_sku_name` selects the SKU; `workspace_id` supplies the logging

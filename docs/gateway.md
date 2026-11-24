@@ -5,6 +5,16 @@ model provider and model registrations, an alias, MCP tool endpoints and
 optional telemetry. This isolates gateway configuration and access policy from
 the Foundry account and agent release, while both remain dependencies.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/gateway.html)
+
+[![AI Gateway model and MCP routing, OTLP export and logical resource-group boundaries](diagrams/gateway.svg)](diagrams/gateway.html)
+
+The external service-managed telemetry group is not provisioned by this root.
+API Management icons represent gateway alias and MCP configuration, not an
+additional APIM service. See the [diagram legend and sources](diagrams/README.md).
+
 ## Routing, tools and access
 
 - The root consumes Foundry account, endpoint and model deployment details;

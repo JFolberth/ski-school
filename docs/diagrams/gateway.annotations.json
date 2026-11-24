@@ -1,0 +1,41 @@
+{
+  "title": "AI Gateway - model, tool and OTLP flows across resource groups",
+  "update": {
+    "azurerm_resource_group.gateway": {"label": "Gateway RG | OWNED: infra/gateway | East US 2"},
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | external | North Central US"},
+    "azurerm_group.project": {"label": "Existing project | agent: Backend state; toolbox: separate publication"},
+    "azurerm_resource_group.managed_telemetry": {"label": "Service-managed telemetry RG | supplied DCR/endpoints, NOT Terraform-owned"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external | workspaces: East US 2"},
+    "azurerm_ski_foundry_agent.agent": {"label": "Hosted MAF agent"},
+    "azurerm_ski_ai_gateway.gateway": {"label": "Standalone AI Gateway"},
+    "azurerm_api_management_api.alias": {"label": "Model provider + models + alias"},
+    "azurerm_api_management_api.mcp": {"label": "Scoped ski-tools MCP endpoint"},
+    "azurerm_ski_foundry_models.models": {"label": "Two Foundry model deployments"},
+    "azurerm_ai_foundry.toolbox": {"label": "Versioned Foundry Toolbox"},
+    "azurerm_application_insights.telemetry": {"label": "Gateway App Insights"},
+    "azurerm_monitor_diagnostic_setting.exporter": {"label": "OTLP exporter + payloads"},
+    "azurerm_monitor.ingestion": {"label": "External DCR + OTLP endpoints"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Log Analytics: logs / traces"},
+    "azurerm_monitor_workspace.metrics": {"label": "Azure Monitor workspace"}
+  },
+  "connect": {
+    "azurerm_ski_foundry_agent.agent": [{"azurerm_ski_ai_gateway.gateway": "Scoped model / tool permissions"}],
+    "azurerm_ski_ai_gateway.gateway": [{"azurerm_api_management_api.alias": "Model requests"}, {"azurerm_api_management_api.mcp": "Discover / call approved tools"}, {"azurerm_monitor_diagnostic_setting.exporter": "Logs / traces / metrics"}],
+    "azurerm_api_management_api.alias": [{"azurerm_ski_foundry_models.models": "Alias selection + policy limits"}],
+    "azurerm_api_management_api.mcp": [{"azurerm_ai_foundry.toolbox": "Enforce allow / block policy"}],
+    "azurerm_application_insights.telemetry": [{"azurerm_log_analytics_workspace.logs": "Workspace association"}, {"azurerm_monitor_workspace.metrics": "Native OTLP association"}],
+    "azurerm_monitor_diagnostic_setting.exporter": [{"azurerm_monitor.ingestion": "OTLP using gateway identity + DCR grant"}],
+    "azurerm_monitor.ingestion": [{"azurerm_log_analytics_workspace.logs": "Configured logs / traces destination"}, {"azurerm_monitor_workspace.metrics": "Configured metrics destination"}]
+  },
+  "flows": {
+    "routing": {
+      "description": "Model and tool routing are distinct branches",
+      "steps": [
+        {"resource": "azurerm_ski_foundry_agent.agent -> azurerm_ski_ai_gateway.gateway", "detail": "Agent runtime uses the configured Gateway origin and workspace."},
+        {"resource": "azurerm_api_management_api.alias -> azurerm_ski_foundry_models.models", "detail": "The alias routes among configured models, not regional replicas."},
+        {"resource": "azurerm_api_management_api.mcp -> azurerm_ai_foundry.toolbox", "detail": "Gateway forwards allowed tool calls to the selected toolbox version; booking is blocked."},
+        {"resource": "azurerm_monitor_diagnostic_setting.exporter -> azurerm_monitor.ingestion", "detail": "Dev enables OTLP and payload capture. Supplied endpoints and grants do not prove ingestion."}
+      ]
+    }
+  }
+}

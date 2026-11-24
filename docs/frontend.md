@@ -7,6 +7,16 @@ agent release permits distinct deployment ownership and access boundaries.
 The application still depends on the configured agent, registry and logging
 workspace.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/frontend.html)
+
+[![Frontend's two containers within one Container App and cross-group dependencies](diagrams/frontend.svg)](diagrams/frontend.html)
+
+The two container icons are logical subdivisions of one Container App, not
+separately hosted apps. Image-pull and runtime identities remain distinct.
+See the [diagram legend and sources](diagrams/README.md).
+
 ## Website and bridge
 
 The JavaScript, HTML and CSS in [`src/frontend`](../src/frontend/) implement a

@@ -1,0 +1,68 @@
+{
+  "title": "Ski school - Azure logical flow (checked-in dev configuration)",
+  "update": {
+    "azurerm_resource_group.global": {"label": "Global Front Door RG | infra/frontdoor | global edge"},
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | infra/frontend"},
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | infra/foundry"},
+    "azurerm_resource_group.gateway": {"label": "Gateway RG | infra/gateway"},
+    "azurerm_resource_group.registry": {"label": "Registry RG | infra/registry"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | infra/logging"},
+    "azurerm_group.foundry_account": {"label": "Foundry Account"},
+    "azurerm_group.project": {"label": "Foundry Project"},
+    "azurerm_group.backend_state": {"label": "infra/backend | separate state, NOT another RG"},
+    "tv_azurerm_users.browser": {"label": "Browser"},
+    "azurerm_cdn_frontdoor_profile.edge": {"label": "Front Door routes"},
+    "azurerm_container_app.website": {"label": "nginx + Python bridge"},
+    "azurerm_ski_foundry_agent.agent": {"label": "Hosted MAF agent"},
+    "azurerm_ski_ai_gateway.gateway": {"label": "AI Gateway: alias + MCP"},
+    "azurerm_ski_foundry_models.models": {"label": "Model Deployment(s)"},
+    "azurerm_ai_foundry.toolbox": {"label": "Foundry Toolbox"},
+    "azurerm_container_registry.images": {"label": "Container Registry"},
+    "azurerm_application_insights.agent_telemetry": {"label": "Foundry App Insights"},
+    "azurerm_application_insights.gateway_telemetry": {"label": "Gateway OTLP telemetry"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Log Analytics: logs / traces"},
+    "azurerm_monitor_workspace.metrics": {"label": "Monitor metrics workspace"}
+  },
+  "connect": {
+    "tv_azurerm_users.browser": [{"azurerm_cdn_frontdoor_profile.edge": "HTTPS"}],
+    "azurerm_cdn_frontdoor_profile.edge": [{"azurerm_container_app.website": "Route to public origin"}, {"azurerm_log_analytics_workspace.logs": "Probe logs + metrics"}],
+    "azurerm_container_app.website": [{"azurerm_ski_foundry_agent.agent": "Bridge invokes agent (system identity)"}, {"azurerm_container_registry.images": "Pull frontend / bridge images"}],
+    "azurerm_ski_foundry_agent.agent": [{"azurerm_ski_ai_gateway.gateway": "Model inference + MCP tools"}, {"azurerm_application_insights.agent_telemetry": "Agent telemetry"}],
+    "azurerm_ski_ai_gateway.gateway": [{"azurerm_ski_foundry_models.models": "Model provider routing"}, {"azurerm_ai_foundry.toolbox": "Approved tool calls"}],
+    "azurerm_application_insights.gateway_telemetry": [{"azurerm_log_analytics_workspace.logs": "Logs / traces"}, {"azurerm_monitor_workspace.metrics": "OTLP metrics"}],
+    "azurerm_container_registry.images": [{"azurerm_log_analytics_workspace.logs": "Login / repository diagnostics"}]
+  },
+  "boundary_connections": [
+    {"from": "azurerm_group.project", "to": "azurerm_container_registry.images", "label": "Pull agent image (project identity)"}
+  ],
+  "group_details": {
+    "azurerm_resource_group.global": {"title": "Global Front Door RG", "detail": "Owns the Front Door profile, endpoint, routes, origin configuration and diagnostics. The configured origin is the frontend Container App."},
+    "azurerm_resource_group.frontend": {"title": "Frontend RG", "detail": "Owns the Container Apps environment and one Container App running the nginx website and Python bridge containers. It references the registry, logging workspace and hosted agent."},
+    "azurerm_resource_group.foundry": {"title": "Foundry RG", "detail": "Contains the Foundry account, project, model deployments and Foundry Application Insights. The backend root manages the hosted agent in separate state; toolbox publication is separate from Terraform."},
+    "azurerm_resource_group.gateway": {"title": "Gateway RG", "detail": "Owns AI Gateway, model provider and alias configuration, scoped MCP endpoints and the configured Gateway telemetry resources. It routes requests to the Foundry models and toolbox."},
+    "azurerm_resource_group.registry": {"title": "Registry RG", "detail": "Owns the container registry used for frontend, bridge and hosted-agent images. Consumer pull permissions are managed separately in their respective scopes."},
+    "azurerm_resource_group.logging": {"title": "Logging RG", "detail": "Owns the Log Analytics and Azure Monitor workspaces used as configured telemetry destinations. Connections show configuration, not proof of successful ingestion."}
+  },
+  "step_details": [
+    "The browser accesses the configured Front Door hostname over HTTPS. The Container App also has public ingress; Front Door is not the only possible entry point.",
+    "Front Door routes to the frontend Container App origin. nginx serves the JavaScript website and forwards /api/ requests to the Python bridge in the same app.",
+    "The bridge validates the request origin, JSON and chat history, obtains an identity token, and posts the conversation to the hosted agent's Responses API. The agent response returns through the bridge.",
+    "The hosted Microsoft Agent Framework agent uses an OpenAI-compatible client against the Gateway model endpoint. It obtains identity tokens for Gateway model requests and scoped MCP calls.",
+    "The agent requests the configured model alias. Gateway maps that alias to registered Foundry account model deployments according to the checked-in routing configuration; the diagram does not imply live availability or failover.",
+    "The agent discovers tools through the scoped Gateway MCP endpoint and invokes them when needed. Gateway applies the configured tool policy and forwards permitted calls to the Foundry toolbox."
+  ],
+  "flows": {
+    "request": {
+      "description": "Configured request path; responses return along the calling path",
+      "color": "#16713c",
+      "steps": [
+        {"resource": "tv_azurerm_users.browser -> azurerm_cdn_frontdoor_profile.edge", "detail": "Browser selects the edge hostname; the Container App also has public ingress."},
+        {"resource": "azurerm_cdn_frontdoor_profile.edge -> azurerm_container_app.website", "detail": "Front Door routes to the frontend; nginx serves JavaScript and proxies /api/ to the bridge."},
+        {"resource": "azurerm_container_app.website -> azurerm_ski_foundry_agent.agent", "detail": "The bridge invokes the hosted agent with its system identity."},
+        {"resource": "azurerm_ski_foundry_agent.agent -> azurerm_ski_ai_gateway.gateway", "detail": "The Python MAF agent uses Gateway for model calls and MCP discovery/calls."},
+        {"resource": "azurerm_ski_ai_gateway.gateway -> azurerm_ski_foundry_models.models", "detail": "The model alias selects a configured Foundry deployment; there is no direct-model bypass."},
+        {"resource": "azurerm_ski_ai_gateway.gateway -> azurerm_ai_foundry.toolbox", "detail": "The scoped MCP endpoint enforces tool policy and forwards to the versioned toolbox."}
+      ]
+    }
+  }
+}

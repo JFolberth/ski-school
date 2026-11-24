@@ -33,9 +33,19 @@ flowchart LR
 Arrows show request paths; responses return along the same paths. Tool calls
 are made when needed.
 
+## Azure architecture
+
+![Azure resource groups and request, telemetry, and image-pull flows](docs/diagrams/architecture.png)
+
+Green shows requests, purple shows telemetry, and orange shows image pulls.
+This is a logical view of the checked-in dev configuration, not a live deployment.
+For pan, zoom and animated flow highlighting, download and open the
+[interactive HTML overview](docs/diagrams/architecture.html) locally.
+
 ## Documentation
 
 - [Architecture and deployment boundaries](docs/architecture.md)
+- [Azure diagrams for every Terraform deployment root](docs/diagrams/README.md)
 - Deployment scopes: [global Front Door](docs/frontdoor.md),
   [logging](docs/logging.md), [registry](docs/registry.md),
   [Foundry](docs/foundry.md), [gateway](docs/gateway.md),

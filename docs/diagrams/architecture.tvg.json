@@ -1,0 +1,23 @@
+{
+  "azurerm_resource_group.global": ["azurerm_cdn_frontdoor_profile.edge"],
+  "azurerm_resource_group.frontend": ["azurerm_container_app.website"],
+  "azurerm_resource_group.foundry": ["azurerm_group.foundry_account", "azurerm_application_insights.agent_telemetry"],
+  "azurerm_group.foundry_account": ["azurerm_group.project", "azurerm_ski_foundry_models.models"],
+  "azurerm_group.project": ["azurerm_group.backend_state", "azurerm_ai_foundry.toolbox"],
+  "azurerm_group.backend_state": ["azurerm_ski_foundry_agent.agent"],
+  "azurerm_resource_group.gateway": ["azurerm_ski_ai_gateway.gateway", "azurerm_application_insights.gateway_telemetry"],
+  "azurerm_resource_group.registry": ["azurerm_container_registry.images"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "tv_azurerm_users.browser": ["azurerm_cdn_frontdoor_profile.edge"],
+  "azurerm_cdn_frontdoor_profile.edge": ["azurerm_container_app.website", "azurerm_log_analytics_workspace.logs"],
+  "azurerm_container_app.website": ["azurerm_ski_foundry_agent.agent", "azurerm_container_registry.images", "azurerm_log_analytics_workspace.logs"],
+  "azurerm_ski_foundry_agent.agent": ["azurerm_ski_ai_gateway.gateway", "azurerm_application_insights.agent_telemetry"],
+  "azurerm_ski_ai_gateway.gateway": ["azurerm_ski_foundry_models.models", "azurerm_ai_foundry.toolbox", "azurerm_application_insights.gateway_telemetry"],
+  "azurerm_application_insights.gateway_telemetry": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_application_insights.agent_telemetry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_container_registry.images": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_ski_foundry_models.models": [],
+  "azurerm_ai_foundry.toolbox": [],
+  "azurerm_log_analytics_workspace.logs": [],
+  "azurerm_monitor_workspace.metrics": []
+}

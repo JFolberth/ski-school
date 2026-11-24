@@ -1,0 +1,34 @@
+{
+  "title": "Registry - image publication, pull identities and diagnostics",
+  "update": {
+    "azurerm_resource_group.registry": {"label": "Registry RG | OWNED: infra/registry | North Central US"},
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | external; project pull grant owned by infra/foundry"},
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | external; pull identity/grant owned by infra/frontend"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external dependency | workspace: East US 2"},
+    "tv_azurerm_client.release": {"label": "Image release workflows"},
+    "azurerm_container_registry.images": {"label": "Container Registry | Basic"},
+    "azurerm_ski_foundry_project.pull": {"label": "Project system identity"},
+    "azurerm_container_app.website": {"label": "Frontend + bridge containers"},
+    "azurerm_user_assigned_identity.pull": {"label": "Frontend image-pull identity"},
+    "azurerm_monitor_diagnostic_setting.registry": {"label": "Registry diagnostic setting"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Shared Log Analytics"}
+  },
+  "connect": {
+    "tv_azurerm_client.release": [{"azurerm_container_registry.images": "Publish verified image digests"}],
+    "azurerm_ski_foundry_project.pull": [{"azurerm_container_registry.images": "Pull backend image (project identity)"}],
+    "azurerm_container_app.website": [{"azurerm_container_registry.images": "Pull frontend / bridge by digest"}],
+    "azurerm_user_assigned_identity.pull": [{"azurerm_container_registry.images": "AcrPull in dev (permission)"}],
+    "azurerm_container_registry.images": [{"azurerm_monitor_diagnostic_setting.registry": "Login / repository events"}],
+    "azurerm_monitor_diagnostic_setting.registry": [{"azurerm_log_analytics_workspace.logs": "Send enabled log categories"}]
+  },
+  "flows": {
+    "images": {
+      "description": "Publication and pulls are distinct from provisioning the registry",
+      "steps": [
+        {"resource": "tv_azurerm_client.release -> azurerm_container_registry.images", "detail": "CD publishes images separately; the registry root does not build application images."},
+        {"resource": "azurerm_ski_foundry_project.pull -> azurerm_container_registry.images", "detail": "The Foundry project identity pulls the agent image; it is not the agent runtime identity."},
+        {"resource": "azurerm_container_app.website -> azurerm_container_registry.images", "detail": "Container Apps pulls with a separate user-assigned identity, unavailable to application code."}
+      ]
+    }
+  }
+}
