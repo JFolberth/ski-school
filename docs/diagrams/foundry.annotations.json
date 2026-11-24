@@ -1,0 +1,42 @@
+{
+  "title": "Foundry - foundation ownership and separately published workloads",
+  "update": {
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | OWNED: infra/foundry | North Central US"},
+    "azurerm_group.project": {"label": "Foundry project (logical parent; foundation-owned)"},
+    "azurerm_group.backend_state": {"label": "infra/backend | external state within the SAME RG"},
+    "azurerm_resource_group.registry": {"label": "Registry RG | external dependency"},
+    "azurerm_resource_group.gateway": {"label": "Gateway RG | external caller | East US 2"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external dependency | workspace: East US 2"},
+    "azurerm_ai_foundry.account": {"label": "Foundry account"},
+    "azurerm_ski_foundry_models.models": {"label": "Two model deployments"},
+    "azurerm_ski_foundry_project.connections": {"label": "Project connections"},
+    "azurerm_ai_foundry.toolbox": {"label": "Published Foundry Toolbox"},
+    "azurerm_ski_foundry_agent.agent": {"label": "Backend-owned agent"},
+    "azurerm_application_insights.telemetry": {"label": "Foundry App Insights"},
+    "azurerm_monitor_diagnostic_setting.account": {"label": "Account Audit diagnostics"},
+    "azurerm_container_registry.images": {"label": "Backend image registry"},
+    "azurerm_ski_ai_gateway.gateway": {"label": "AI Gateway system identity"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Shared Log Analytics"},
+    "tv_azurerm_internet.weather": {"label": "Open-Meteo APIs"},
+    "tv_azurerm_internet.resorts": {"label": "Snowsure MCP (resort tools)"}
+  },
+  "connect": {
+    "azurerm_ai_foundry.account": [{"azurerm_monitor_diagnostic_setting.account": "Account audit events"}],
+    "azurerm_ski_foundry_project.connections": [{"azurerm_container_registry.images": "Image connection + project pull access"}, {"azurerm_application_insights.telemetry": "Project telemetry connection"}, {"tv_azurerm_internet.weather": "OpenAPI connection targets (configuration)"}],
+    "azurerm_ski_ai_gateway.gateway": [{"azurerm_ski_foundry_models.models": "Configured model provider"}, {"azurerm_ai_foundry.toolbox": "Gateway MCP backend"}],
+    "azurerm_ai_foundry.toolbox": [{"tv_azurerm_internet.weather": "Forecast / historical tools"}, {"tv_azurerm_internet.resorts": "Resort search / lookup"}],
+    "azurerm_ski_foundry_agent.agent": [{"azurerm_application_insights.telemetry": "Agent telemetry (runtime grant: Backend)"}],
+    "azurerm_application_insights.telemetry": [{"azurerm_log_analytics_workspace.logs": "Workspace association"}],
+    "azurerm_monitor_diagnostic_setting.account": [{"azurerm_log_analytics_workspace.logs": "Audit only"}]
+  },
+  "flows": {
+    "foundation": {
+      "description": "The foundation supplies dependencies; publication has separate owners",
+      "steps": [
+        {"resource": "azurerm_ski_foundry_project.connections -> azurerm_container_registry.images", "detail": "Optional project connection and grant are enabled by dev inputs; the project pulls the agent image."},
+        {"resource": "azurerm_ski_ai_gateway.gateway -> azurerm_ski_foundry_models.models", "detail": "Gateway consumes account/model details and the configured account-scope grant."},
+        {"resource": "azurerm_ski_ai_gateway.gateway -> azurerm_ai_foundry.toolbox", "detail": "The toolbox is published separately by Foundry CD; it is not provisioned by this root."}
+      ]
+    }
+  }
+}

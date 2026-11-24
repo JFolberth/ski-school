@@ -6,6 +6,16 @@ from application resource groups gives observability its own deployment and
 access boundary; consumers still depend on the workspaces and their availability.
 Azure can also create service-managed resources for the Monitor workspace.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/logging.html)
+
+[![Logging workspaces and cross-resource-group telemetry destinations](diagrams/logging.svg)](diagrams/logging.html)
+
+The Logging root owns only the two workspaces and its resource group; consumer
+configuration stays with the other roots. Arrows show configured destinations,
+not successful ingestion. See the [diagram legend and sources](diagrams/README.md).
+
 ## Configuration and handoffs
 
 - `workspace_location`, `workspace_sku_name`, and

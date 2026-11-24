@@ -1,0 +1,13 @@
+{
+  "azurerm_resource_group.registry": ["azurerm_container_registry.images", "azurerm_monitor_diagnostic_setting.registry"],
+  "azurerm_resource_group.foundry": ["azurerm_ski_foundry_project.pull"],
+  "azurerm_resource_group.frontend": ["azurerm_user_assigned_identity.pull", "azurerm_container_app.website"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs"],
+  "tv_azurerm_client.release": ["azurerm_container_registry.images"],
+  "azurerm_ski_foundry_project.pull": ["azurerm_container_registry.images"],
+  "azurerm_container_app.website": ["azurerm_container_registry.images"],
+  "azurerm_user_assigned_identity.pull": ["azurerm_container_registry.images"],
+  "azurerm_container_registry.images": ["azurerm_monitor_diagnostic_setting.registry"],
+  "azurerm_monitor_diagnostic_setting.registry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_log_analytics_workspace.logs": []
+}

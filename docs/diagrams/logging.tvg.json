@@ -1,0 +1,17 @@
+{
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_resource_group.registry": ["azurerm_monitor_diagnostic_setting.registry"],
+  "azurerm_resource_group.foundry": ["azurerm_monitor_diagnostic_setting.foundry", "azurerm_application_insights.foundry"],
+  "azurerm_resource_group.gateway": ["azurerm_application_insights.gateway"],
+  "azurerm_resource_group.frontend": ["azurerm_monitor_diagnostic_setting.frontend", "azurerm_application_insights.frontend"],
+  "azurerm_resource_group.global": ["azurerm_monitor_diagnostic_setting.edge"],
+  "azurerm_monitor_diagnostic_setting.registry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_monitor_diagnostic_setting.foundry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_application_insights.foundry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_application_insights.gateway": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_monitor_diagnostic_setting.frontend": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_application_insights.frontend": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_monitor_diagnostic_setting.edge": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_log_analytics_workspace.logs": [],
+  "azurerm_monitor_workspace.metrics": []
+}

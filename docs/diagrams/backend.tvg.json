@@ -1,0 +1,18 @@
+{
+  "azurerm_resource_group.foundry": ["azurerm_group.project", "azurerm_application_insights.telemetry"],
+  "azurerm_group.project": ["azurerm_ski_foundry_project.project", "azurerm_group.backend_state"],
+  "azurerm_group.backend_state": ["azurerm_ski_foundry_agent.agent"],
+  "azurerm_resource_group.gateway": ["azurerm_api_management_api.alias", "azurerm_api_management_api.mcp"],
+  "azurerm_resource_group.registry": ["azurerm_container_registry.images"],
+  "azurerm_resource_group.frontend": ["azurerm_container_app.bridge"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs"],
+  "tv_azurerm_client.release": ["azurerm_container_registry.images", "azurerm_ski_foundry_agent.agent"],
+  "azurerm_container_app.bridge": ["azurerm_ski_foundry_agent.agent"],
+  "azurerm_ski_foundry_project.project": ["azurerm_container_registry.images"],
+  "azurerm_ski_foundry_agent.agent": ["azurerm_api_management_api.alias", "azurerm_api_management_api.mcp", "azurerm_application_insights.telemetry"],
+  "azurerm_application_insights.telemetry": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_api_management_api.alias": [],
+  "azurerm_api_management_api.mcp": [],
+  "azurerm_container_registry.images": [],
+  "azurerm_log_analytics_workspace.logs": []
+}

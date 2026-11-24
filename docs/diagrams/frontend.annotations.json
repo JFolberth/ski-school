@@ -1,0 +1,42 @@
+{
+  "title": "Frontend - one Container App, two containers and cross-RG dependencies",
+  "update": {
+    "azurerm_resource_group.frontend": {"label": "Frontend RG | OWNED: infra/frontend | North Central US"},
+    "azurerm_group.replica": {"label": "ONE Container App / replica | two logical container nodes, NOT two apps"},
+    "azurerm_resource_group.global": {"label": "Global Front Door RG | external caller"},
+    "azurerm_resource_group.foundry": {"label": "Foundry RG | existing agent | Frontend owns agent-consumer grant"},
+    "azurerm_resource_group.registry": {"label": "Registry RG | external | Frontend owns pull grant"},
+    "azurerm_resource_group.logging": {"label": "Logging RG | external | workspace: East US 2"},
+    "tv_azurerm_users.browser": {"label": "Browser"},
+    "azurerm_cdn_frontdoor_profile.edge": {"label": "Front Door"},
+    "azurerm_container_app.nginx": {"label": "nginx | port 8080"},
+    "azurerm_container_app.bridge": {"label": "Python bridge | 127.0.0.1:8089"},
+    "azurerm_container_app_environment.environment": {"label": "Container Apps environment"},
+    "azurerm_user_assigned_identity.pull": {"label": "Image-pull identity"},
+    "azurerm_application_insights.telemetry": {"label": "App Insights association"},
+    "azurerm_monitor_diagnostic_setting.environment": {"label": "Environment diagnostics"},
+    "azurerm_ski_foundry_agent.agent": {"label": "Foundry hosted agent"},
+    "azurerm_container_registry.images": {"label": "Frontend + bridge image digests"},
+    "azurerm_log_analytics_workspace.logs": {"label": "Shared Log Analytics"}
+  },
+  "connect": {
+    "tv_azurerm_users.browser": [{"azurerm_cdn_frontdoor_profile.edge": "HTTPS edge hostname"}, {"azurerm_container_app.nginx": "Direct public ingress remains"}],
+    "azurerm_cdn_frontdoor_profile.edge": [{"azurerm_container_app.nginx": "HTTPS public origin"}],
+    "azurerm_container_app.nginx": [{"azurerm_container_app.bridge": "Proxy /api/ and /healthz over loopback"}, {"azurerm_container_registry.images": "Platform pulls nginx image"}],
+    "azurerm_container_app.bridge": [{"azurerm_ski_foundry_agent.agent": "Responses API | app system identity"}, {"azurerm_container_registry.images": "Platform pulls bridge image"}],
+    "azurerm_user_assigned_identity.pull": [{"azurerm_container_registry.images": "AcrPull in dev (permission)"}],
+    "azurerm_container_app_environment.environment": [{"azurerm_monitor_diagnostic_setting.environment": "Azure Monitor log destination"}],
+    "azurerm_monitor_diagnostic_setting.environment": [{"azurerm_log_analytics_workspace.logs": "Console / system logs"}],
+    "azurerm_application_insights.telemetry": [{"azurerm_log_analytics_workspace.logs": "Workspace association, not proof of instrumentation"}]
+  },
+  "flows": {
+    "request": {
+      "description": "The bridge is not a second public service",
+      "steps": [
+        {"resource": "azurerm_cdn_frontdoor_profile.edge -> azurerm_container_app.nginx", "detail": "Frontend ingress is public; Front Door is not an enforced network-only entry point."},
+        {"resource": "azurerm_container_app.nginx -> azurerm_container_app.bridge", "detail": "The website and bridge run in the same replica; the bridge listens only on loopback."},
+        {"resource": "azurerm_container_app.bridge -> azurerm_ski_foundry_agent.agent", "detail": "The bridge checks allowed origins and invokes the explicitly supplied agent with the app system identity."}
+      ]
+    }
+  }
+}

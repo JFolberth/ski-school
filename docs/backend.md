@@ -10,6 +10,16 @@ the Foundry account or project. Those are owned by the
 agent be updated independently of its account and project foundation without
 claiming the resources or dependencies are independent.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/backend.html)
+
+[![Backend release state inside Foundry and cross-group runtime, image and telemetry flows](diagrams/backend.svg)](diagrams/backend.html)
+
+Only the inner Backend state boundary owns the hosted-agent definition;
+runtime grants target the existing Gateway and Foundry telemetry scopes.
+See the [diagram legend and sources](diagrams/README.md).
+
 ## Runtime
 
 [`src/backend/main.py`](../src/backend/main.py) builds a Python MAF agent served

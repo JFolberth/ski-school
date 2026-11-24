@@ -1,0 +1,18 @@
+{
+  "azurerm_resource_group.gateway": ["azurerm_ski_ai_gateway.gateway", "azurerm_api_management_api.alias", "azurerm_api_management_api.mcp", "azurerm_application_insights.telemetry", "azurerm_monitor_diagnostic_setting.exporter"],
+  "azurerm_resource_group.foundry": ["azurerm_group.project", "azurerm_ski_foundry_models.models"],
+  "azurerm_group.project": ["azurerm_ski_foundry_agent.agent", "azurerm_ai_foundry.toolbox"],
+  "azurerm_resource_group.managed_telemetry": ["azurerm_monitor.ingestion"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_ski_foundry_agent.agent": ["azurerm_ski_ai_gateway.gateway"],
+  "azurerm_ski_ai_gateway.gateway": ["azurerm_api_management_api.alias", "azurerm_api_management_api.mcp", "azurerm_monitor_diagnostic_setting.exporter"],
+  "azurerm_api_management_api.alias": ["azurerm_ski_foundry_models.models"],
+  "azurerm_api_management_api.mcp": ["azurerm_ai_foundry.toolbox"],
+  "azurerm_application_insights.telemetry": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_monitor_diagnostic_setting.exporter": ["azurerm_monitor.ingestion"],
+  "azurerm_monitor.ingestion": ["azurerm_log_analytics_workspace.logs", "azurerm_monitor_workspace.metrics"],
+  "azurerm_ai_foundry.toolbox": [],
+  "azurerm_ski_foundry_models.models": [],
+  "azurerm_log_analytics_workspace.logs": [],
+  "azurerm_monitor_workspace.metrics": []
+}

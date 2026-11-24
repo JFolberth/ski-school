@@ -7,6 +7,15 @@ and agent releases allows these pieces to have different deployment ownership
 and change lifecycles. The root also manages optional project connections and
 cross-scope grants; it does not own the registry or gateway.
 
+## Azure diagram
+
+[Open interactive HTML diagram](diagrams/foundry.html)
+
+[![Foundry foundation, project connections, separately owned agent and toolbox flows](diagrams/foundry.svg)](diagrams/foundry.html)
+
+The Backend state boundary is inside the existing project; toolbox publication
+is separate from Terraform. See the [diagram legend and sources](diagrams/README.md).
+
 ## Resources and dependencies
 
 - The account and project provide the foundation for hosted agents. The

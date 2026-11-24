@@ -1,0 +1,14 @@
+{
+  "azurerm_resource_group.global": ["azurerm_cdn_frontdoor_profile.profile", "azurerm_cdn_frontdoor_endpoint.endpoint", "azurerm_cdn_frontdoor_route.route", "azurerm_cdn_frontdoor_origin_group.origin_group", "azurerm_cdn_frontdoor_origin.origin", "azurerm_monitor_diagnostic_setting.edge"],
+  "azurerm_resource_group.frontend": ["azurerm_container_app.website"],
+  "azurerm_resource_group.logging": ["azurerm_log_analytics_workspace.logs"],
+  "tv_azurerm_users.browser": ["azurerm_cdn_frontdoor_endpoint.endpoint"],
+  "azurerm_cdn_frontdoor_profile.profile": ["azurerm_monitor_diagnostic_setting.edge"],
+  "azurerm_cdn_frontdoor_endpoint.endpoint": ["azurerm_cdn_frontdoor_route.route"],
+  "azurerm_cdn_frontdoor_route.route": ["azurerm_cdn_frontdoor_origin_group.origin_group"],
+  "azurerm_cdn_frontdoor_origin_group.origin_group": ["azurerm_cdn_frontdoor_origin.origin"],
+  "azurerm_cdn_frontdoor_origin.origin": ["azurerm_container_app.website"],
+  "azurerm_monitor_diagnostic_setting.edge": ["azurerm_log_analytics_workspace.logs"],
+  "azurerm_container_app.website": [],
+  "azurerm_log_analytics_workspace.logs": []
+}
